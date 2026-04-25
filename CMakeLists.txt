@@ -7,6 +7,7 @@ set(SOURCES
     src/main.c
     src/can_manager.c
     src/uart_manager.c
+    src/tab_can_upgrade.c
 )
 
 set(RESOURCES

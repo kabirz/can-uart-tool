@@ -4,9 +4,12 @@
 #include <windows.h>
 #include <commctrl.h>
 #include "resource.h"
+#include "can_manager.h"
+#include "uart_manager.h"
 
-/* Forward declarations for tab page creation (to be implemented in later tasks) */
-// extern HWND TabCanUpgrade_Create(HWND hParent, HINSTANCE hInst, void* ctx);
+/* Forward declarations for tab page creation */
+extern HWND TabCanUpgrade_Create(HWND hParent, HINSTANCE hInst, CanManager *can_mgr, UartManager *uart_mgr);
+extern void TabCanUpgrade_Destroy(HWND hwnd);
 // extern HWND TabCanCommand_Create(HWND hParent, HINSTANCE hInst, void* ctx);
 // extern HWND TabUartTerminal_Create(HWND hParent, HINSTANCE hInst, void* ctx);
 // extern HWND TabNetTerminal_Create(HWND hParent, HINSTANCE hInst, void* ctx);
@@ -33,6 +36,8 @@ typedef struct {
     HWND  hTabPages[MAX_TABS];
     HFONT hFont;
     HFONT hTabFont;
+    CanManager  *canMgr;
+    UartManager *uartMgr;
 } APP_DATA;
 
 static APP_DATA g_App;
@@ -50,7 +55,7 @@ static void CalcWindowRectFromClient(DWORD style, DWORD exStyle, int cx, int cy,
     prc->bottom += 26;
 }
 
-/* Create placeholder static controls for each tab page */
+/* Create tab pages: tab 0 uses the real upgrade page, others are placeholders */
 static void CreateTabPages(HWND hTabCtrl, HINSTANCE hInst)
 {
     RECT rc;
@@ -60,7 +65,12 @@ static void CreateTabPages(HWND hTabCtrl, HINSTANCE hInst)
     GetClientRect(hTabCtrl, &rc);
     TabCtrl_AdjustRect(hTabCtrl, FALSE, &rc);
 
-    for (i = 0; i < MAX_TABS; i++) {
+    /* Tab 0: CAN/UART Firmware Upgrade (real page) */
+    g_App.hTabPages[0] = TabCanUpgrade_Create(hTabCtrl, hInst,
+                                               g_App.canMgr, g_App.uartMgr);
+
+    /* Tabs 1-3: placeholder static controls */
+    for (i = 1; i < MAX_TABS; i++) {
         g_App.hTabPages[i] = CreateWindowExW(
             0, L"STATIC", g_TabPlaceholders[i],
             WS_CHILD | WS_VISIBLE | SS_CENTER | SS_CENTERIMAGE,
@@ -202,6 +212,10 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
         break;
 
     case WM_DESTROY:
+        /* Destroy tab page 0 (upgrade page) explicitly */
+        TabCanUpgrade_Destroy(g_App.hTabPages[0]);
+        g_App.hTabPages[0] = NULL;
+
         if (g_App.hFont) {
             DeleteObject(g_App.hFont);
             g_App.hFont = NULL;
@@ -210,6 +224,17 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
             DeleteObject(g_App.hTabFont);
             g_App.hTabFont = NULL;
         }
+
+        /* Destroy managers */
+        if (g_App.canMgr) {
+            CanManager_Destroy(g_App.canMgr);
+            g_App.canMgr = NULL;
+        }
+        if (g_App.uartMgr) {
+            UartManager_Destroy(g_App.uartMgr);
+            g_App.uartMgr = NULL;
+        }
+
         PostQuitMessage(0);
         return 0;
     }
@@ -225,6 +250,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
     /* Initialize common controls */
     InitCommonControls();
+
+    /* Create CAN and UART managers */
+    g_App.canMgr = CanManager_Create();
+    if (!g_App.canMgr) {
+        MessageBoxW(NULL, L"无法创建CAN管理器", L"错误", MB_OK | MB_ICONERROR);
+        return 1;
+    }
+    g_App.uartMgr = UartManager_Create();
+    if (!g_App.uartMgr) {
+        MessageBoxW(NULL, L"无法创建UART管理器", L"错误", MB_OK | MB_ICONERROR);
+        CanManager_Destroy(g_App.canMgr);
+        return 1;
+    }
 
     /* Register window class */
     WNDCLASSEXW wc = { 0 };
