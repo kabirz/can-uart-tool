@@ -6,13 +6,14 @@
 #include "resource.h"
 #include "can_manager.h"
 #include "uart_manager.h"
+#include "can_command.h"
 
 /* Forward declarations for tab page creation */
 extern HWND TabCanUpgrade_Create(HWND hParent, HINSTANCE hInst, CanManager *can_mgr, UartManager *uart_mgr);
 extern void TabCanUpgrade_Destroy(HWND hwnd);
-// extern HWND TabCanCommand_Create(HWND hParent, HINSTANCE hInst, void* ctx);
-// extern HWND TabUartTerminal_Create(HWND hParent, HINSTANCE hInst, void* ctx);
-// extern HWND TabNetTerminal_Create(HWND hParent, HINSTANCE hInst, void* ctx);
+extern HWND TabCanCommand_Create(HWND hParent, HINSTANCE hInst, CanCommand *cmd);
+extern void TabCanCommand_Destroy(HWND hwnd);
+extern void TabCanCommand_UpdateChannel(HWND hwnd, TPCANHandle channel);
 
 #define MAX_TABS 4
 
@@ -38,6 +39,7 @@ typedef struct {
     HFONT hTabFont;
     CanManager  *canMgr;
     UartManager *uartMgr;
+    CanCommand  *canCmd;
 } APP_DATA;
 
 static APP_DATA g_App;
@@ -69,8 +71,11 @@ static void CreateTabPages(HWND hTabCtrl, HINSTANCE hInst)
     g_App.hTabPages[0] = TabCanUpgrade_Create(hTabCtrl, hInst,
                                                g_App.canMgr, g_App.uartMgr);
 
-    /* Tabs 1-3: placeholder static controls */
-    for (i = 1; i < MAX_TABS; i++) {
+    /* Tab 1: CAN Command page */
+    g_App.hTabPages[1] = TabCanCommand_Create(hTabCtrl, hInst, g_App.canCmd);
+
+    /* Tabs 2-3: placeholder static controls */
+    for (i = 2; i < MAX_TABS; i++) {
         g_App.hTabPages[i] = CreateWindowExW(
             0, L"STATIC", g_TabPlaceholders[i],
             WS_CHILD | WS_VISIBLE | SS_CENTER | SS_CENTERIMAGE,
@@ -212,9 +217,11 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
         break;
 
     case WM_DESTROY:
-        /* Destroy tab page 0 (upgrade page) explicitly */
+        /* Destroy tab pages explicitly */
         TabCanUpgrade_Destroy(g_App.hTabPages[0]);
         g_App.hTabPages[0] = NULL;
+        TabCanCommand_Destroy(g_App.hTabPages[1]);
+        g_App.hTabPages[1] = NULL;
 
         if (g_App.hFont) {
             DeleteObject(g_App.hFont);
@@ -226,6 +233,10 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
         }
 
         /* Destroy managers */
+        if (g_App.canCmd) {
+            CanCommand_Destroy(g_App.canCmd);
+            g_App.canCmd = NULL;
+        }
         if (g_App.canMgr) {
             CanManager_Destroy(g_App.canMgr);
             g_App.canMgr = NULL;
@@ -260,6 +271,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     g_App.uartMgr = UartManager_Create();
     if (!g_App.uartMgr) {
         MessageBoxW(NULL, L"无法创建UART管理器", L"错误", MB_OK | MB_ICONERROR);
+        CanManager_Destroy(g_App.canMgr);
+        return 1;
+    }
+
+    /* Create CAN command module */
+    g_App.canCmd = CanCommand_Create(PCAN_NONEBUS);
+    if (!g_App.canCmd) {
+        MessageBoxW(NULL, L"无法创建CAN命令模块", L"错误", MB_OK | MB_ICONERROR);
+        UartManager_Destroy(g_App.uartMgr);
         CanManager_Destroy(g_App.canMgr);
         return 1;
     }

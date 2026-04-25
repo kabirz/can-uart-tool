@@ -9,6 +9,7 @@ set(SOURCES
     src/uart_manager.c
     src/tab_can_upgrade.c
     src/can_command.c
+    src/tab_can_command.c
     src/terminal_common.c
     src/net_terminal.c
     src/uart_terminal.c
