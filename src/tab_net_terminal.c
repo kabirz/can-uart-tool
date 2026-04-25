@@ -223,21 +223,21 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
             CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN,
             L"Consolas");
 
-        /* ---- Layout coordinates ---- */
-        int margin = 12;
-        int lineH = 26;
+        /* ---- Layout coordinates (1200x1080 client area, ~1172x1010 tab) ---- */
+        int margin = 10;
 
-        /* ========== Connection Bar (top) ========== */
-        int barY = margin;
+        /* ========== Connection Bar (top, full width) ========== */
+        int barY = 10;
+        int barH = 42;
 
         /* Protocol label */
-        CreateLabel(hwnd, hInst, -1, margin, barY + 3, 44, 20,
+        CreateLabel(hwnd, hInst, -1, margin, barY + 10, 44, 22,
                     L"\x534F\x8BAE:", pData->hFont);
 
         /* TCP radio button (default) */
         pData->hRadioTcp = CreateWindowExW(0, L"BUTTON", L"TCP",
             WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
-            margin + 48, barY, 60, 22,
+            margin + 50, barY + 8, 64, 24,
             hwnd, (HMENU)IDC_RADIO_TCP, hInst, NULL);
         SendMessageW(pData->hRadioTcp, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
         SendMessageW(pData->hRadioTcp, BM_SETCHECK, BST_CHECKED, 0);
@@ -245,52 +245,47 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
         /* UDP radio button */
         pData->hRadioUdp = CreateWindowExW(0, L"BUTTON", L"UDP",
             WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-            margin + 112, barY, 60, 22,
+            margin + 120, barY + 8, 64, 24,
             hwnd, (HMENU)IDC_RADIO_UDP, hInst, NULL);
         SendMessageW(pData->hRadioUdp, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         /* Host label */
-        CreateLabel(hwnd, hInst, -1, margin + 176, barY + 3, 36, 20,
+        CreateLabel(hwnd, hInst, -1, margin + 200, barY + 10, 44, 22,
                     L"\x4E3B\x673A:", pData->hFont);
 
-        /* Host edit */
+        /* Host edit (250px wide to show full IP addresses) */
         pData->hEditHost = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT",
             L"192.168.1.100",
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-            margin + 216, barY, 160, 22,
+            margin + 250, barY + 8, 250, 24,
             hwnd, (HMENU)IDC_EDIT_NET_HOST, hInst, NULL);
         SendMessageW(pData->hEditHost, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         /* Port label */
-        CreateLabel(hwnd, hInst, -1, margin + 384, barY + 3, 36, 20,
+        CreateLabel(hwnd, hInst, -1, margin + 510, barY + 10, 44, 22,
                     L"\x7AEF\x53E3:", pData->hFont);
 
-        /* Port edit */
+        /* Port edit (80px wide) */
         pData->hEditPort = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT",
             L"23",
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_NUMBER,
-            margin + 424, barY, 60, 22,
+            margin + 560, barY + 8, 80, 24,
             hwnd, (HMENU)IDC_EDIT_NET_PORT, hInst, NULL);
         SendMessageW(pData->hEditPort, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
-        /* Connect button */
+        /* Connect button (90px wide) */
         pData->hBtnConnect = CreateWindowExW(0, L"BUTTON",
             L"\x8FDE\x63A5",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            margin + 496, barY, 80, 24,
+            margin + 660, barY + 8, 90, 26,
             hwnd, (HMENU)IDC_BUTTON_NET_CONNECT, hInst, NULL);
         SendMessageW(pData->hBtnConnect, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         /* ========== Terminal Display (main area) ========== */
-        int termX = margin;
-        int termY = barY + lineH + 6;
-
-        /* Get the available width/height for the terminal */
-        RECT rcParent;
-        GetClientRect(GetParent(hwnd), &rcParent);
-        TabCtrl_AdjustRect(GetParent(hwnd), FALSE, &rcParent);
-        int availW = rcParent.right - rcParent.left - 2 * margin;
-        int availH = rcParent.bottom - rcParent.top - termY - 36 - margin;
+        int termX = 10;
+        int termY = 56;
+        int termW = 1152;
+        int termH = 900;
 
         /* Load RichEdit library */
         static HMODULE hRichEdit = NULL;
@@ -302,7 +297,7 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
             MSFTEDIT_CLASS, L"",
             WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL |
             ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
-            termX, termY, availW, availH,
+            termX, termY, termW, termH,
             hwnd, (HMENU)IDC_EDIT_NET_TERMINAL, hInst, NULL);
 
         /* Dark theme for RichEdit */
@@ -311,7 +306,7 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
         cf.cbSize = sizeof(cf);
         cf.dwMask = CFM_COLOR | CFM_FACE | CFM_SIZE;
         cf.crTextColor = RGB(0xCC, 0xCC, 0xCC);
-        cf.yHeight = 240;  /* 12pt = 240 twips */
+        cf.yHeight = 280;  /* 14pt = 280 twips */
         wcscpy(cf.szFaceName, L"Consolas");
         SendMessageW(pData->hEditTerminal, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
         SendMessageW(pData->hEditTerminal, EM_SETEVENTMASK, 0, ENM_KEYEVENTS);
@@ -325,13 +320,13 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
         Terminal_SetSendFunc(pData->termCtx, NetSendFunc, pData);
 
         /* ========== Bottom Toolbar ========== */
-        int tbY = termY + availH + 6;
+        int tbY = 960;
 
         /* Clear button */
         pData->hBtnClear = CreateWindowExW(0, L"BUTTON",
             L"\x6E05\x9664",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            margin, tbY, 70, 24,
+            margin, tbY, 80, 26,
             hwnd, (HMENU)IDC_BUTTON_NET_CLEAR, hInst, NULL);
         SendMessageW(pData->hBtnClear, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
@@ -339,7 +334,7 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
         pData->hLabelStatus = CreateWindowExW(0, L"STATIC",
             L"Raw \x900F\x4F20\x6A21\x5F0F",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
-            margin + 80, tbY + 3, 200, 20,
+            margin + 90, tbY + 4, 240, 22,
             hwnd, NULL, hInst, NULL);
         SendMessageW(pData->hLabelStatus, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
@@ -358,15 +353,14 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
 
         int cxClient = LOWORD(lParam);
         int cyClient = HIWORD(lParam);
-        int margin = 12;
-        int lineH = 26;
-        int barH = lineH + 6;
-        int tbH = 36;
+        int margin = 10;
+        int barH = 46;   /* Connection bar height */
+        int tbH = 40;    /* Bottom toolbar height */
 
         int termX = margin;
         int termY = barH + margin;
         int termW = cxClient - 2 * margin;
-        int termH = cyClient - termY - tbH;
+        int termH = cyClient - termY - tbH - margin;
 
         if (termW < 100) termW = 100;
         if (termH < 50) termH = 50;
@@ -375,12 +369,12 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
             MoveWindow(pData->hEditTerminal, termX, termY, termW, termH, TRUE);
         }
 
-        int tbY = termY + termH + 6;
+        int tbY = cyClient - tbH;
         if (pData->hBtnClear) {
-            MoveWindow(pData->hBtnClear, margin, tbY, 70, 24, TRUE);
+            MoveWindow(pData->hBtnClear, margin, tbY, 80, 26, TRUE);
         }
         if (pData->hLabelStatus) {
-            MoveWindow(pData->hLabelStatus, margin + 80, tbY + 3, 300, 20, TRUE);
+            MoveWindow(pData->hLabelStatus, margin + 90, tbY + 4, 300, 22, TRUE);
         }
         return 0;
     }
