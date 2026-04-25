@@ -72,19 +72,19 @@ static HWND CreateLabel(HWND hParent, HINSTANCE hInst, int id,
 static void UpdateConnectionUI(TAB_NET_DATA *pData, int connected)
 {
     if (connected) {
-        SetWindowTextW(pData->hBtnConnect, L"\x65AD\x5F00");  /* "断开" */
+        SetWindowTextW(pData->hBtnConnect, L"断开");  /* "断开" */
         EnableWindow(pData->hRadioTcp, FALSE);
         EnableWindow(pData->hRadioUdp, FALSE);
         EnableWindow(pData->hEditHost, FALSE);
         EnableWindow(pData->hEditPort, FALSE);
-        SetWindowTextW(pData->hLabelStatus, L"\x5DF2\x8FDE\x63A5 - Raw \x900F\x4F20\x6A21\x5F0F");
+        SetWindowTextW(pData->hLabelStatus, L"已连接 - Raw 透传模式");
     } else {
-        SetWindowTextW(pData->hBtnConnect, L"\x8FDE\x63A5");  /* "连接" */
+        SetWindowTextW(pData->hBtnConnect, L"连接");  /* "连接" */
         EnableWindow(pData->hRadioTcp, TRUE);
         EnableWindow(pData->hRadioUdp, TRUE);
         EnableWindow(pData->hEditHost, TRUE);
         EnableWindow(pData->hEditPort, TRUE);
-        SetWindowTextW(pData->hLabelStatus, L"Raw \x900F\x4F20\x6A21\x5F0F");
+        SetWindowTextW(pData->hLabelStatus, L"Raw 透传模式");
     }
 }
 
@@ -232,7 +232,7 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
 
         /* Protocol label */
         CreateLabel(hwnd, hInst, -1, margin, barY + 10, 44, 22,
-                    L"\x534F\x8BAE:", pData->hFont);
+                    L"协议:", pData->hFont);
 
         /* TCP radio button (default) */
         pData->hRadioTcp = CreateWindowExW(0, L"BUTTON", L"TCP",
@@ -251,7 +251,7 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
 
         /* Host label */
         CreateLabel(hwnd, hInst, -1, margin + 200, barY + 10, 44, 22,
-                    L"\x4E3B\x673A:", pData->hFont);
+                    L"主机:", pData->hFont);
 
         /* Host edit (250px wide to show full IP addresses) */
         pData->hEditHost = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT",
@@ -263,7 +263,7 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
 
         /* Port label */
         CreateLabel(hwnd, hInst, -1, margin + 510, barY + 10, 44, 22,
-                    L"\x7AEF\x53E3:", pData->hFont);
+                    L"端口:", pData->hFont);
 
         /* Port edit (80px wide) */
         pData->hEditPort = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT",
@@ -275,7 +275,7 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
 
         /* Connect button (90px wide) */
         pData->hBtnConnect = CreateWindowExW(0, L"BUTTON",
-            L"\x8FDE\x63A5",
+            L"连接",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             margin + 660, barY + 8, 90, 26,
             hwnd, (HMENU)IDC_BUTTON_NET_CONNECT, hInst, NULL);
@@ -324,7 +324,7 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
 
         /* Clear button */
         pData->hBtnClear = CreateWindowExW(0, L"BUTTON",
-            L"\x6E05\x9664",
+            L"清除",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             margin, tbY, 80, 26,
             hwnd, (HMENU)IDC_BUTTON_NET_CLEAR, hInst, NULL);
@@ -332,7 +332,7 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
 
         /* Status label */
         pData->hLabelStatus = CreateWindowExW(0, L"STATIC",
-            L"Raw \x900F\x4F20\x6A21\x5F0F",
+            L"Raw 透传模式",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
             margin + 90, tbY + 4, 240, 22,
             hwnd, NULL, hInst, NULL);

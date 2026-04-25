@@ -111,16 +111,16 @@ static uint32_t GetBE32(const uint8_t *buf)
 static const wchar_t *GetFrameDesc(uint32_t can_id)
 {
     switch (can_id) {
-    case CANID_HEARTBEAT:     return L" [\x5FC3\x8DF3]";
-    case CANID_LORA_RX:       return L" [LoRa\x53D1\x9001]";
-    case CANID_LORA_TX:       return L" [LoRa\x54CD\x5E94]";
-    case CANID_PLATFORM_RX:   return L" [\x5E73\x53F0RX]";
-    case CANID_PLATFORM_TX:   return L" [\x5E73\x53F0TX]";
-    case CANID_FW_DATA_RX:    return L" [\x56FA\x4EF6\x6570\x636E]";
-    case CANID_HANDLER_STATE: return L" [\x624B\x67C4\x72B6\x6001]";
-    case CANID_LASER:         return L" [\x6FC0\x5149]";
-    case CANID_COORD_XY:      return L" [\x5750\x6807XY]";
-    case CANID_COORD_Z:       return L" [\x5750\x6807Z]";
+    case CANID_HEARTBEAT:     return L" [心跳]";
+    case CANID_LORA_RX:       return L" [LoRa发送]";
+    case CANID_LORA_TX:       return L" [LoRa响应]";
+    case CANID_PLATFORM_RX:   return L" [平台RX]";
+    case CANID_PLATFORM_TX:   return L" [平台TX]";
+    case CANID_FW_DATA_RX:    return L" [固件数据]";
+    case CANID_HANDLER_STATE: return L" [手柄状态]";
+    case CANID_LASER:         return L" [激光]";
+    case CANID_COORD_XY:      return L" [坐标XY]";
+    case CANID_COORD_Z:       return L" [坐标Z]";
     default:                  return L"";
     }
 }
@@ -263,7 +263,7 @@ static void SendLoraCommand(TAB_CMD_DATA *pData, uint8_t cmd)
     }
 
     pData->lastLoraCmd = cmd;
-    SetWindowTextW(pData->hLabelLoraStatus, L"\x7B49\x5F85\x54CD\x5E94...");
+    SetWindowTextW(pData->hLabelLoraStatus, L"等待响应...");
 
     CanCommand_SendFrame(pData->canCmd, CANID_LORA_RX, data, dlc, 0, 0);
 }
@@ -319,7 +319,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         /* ========== Group 1: Frame Configuration (left, upper) ========== */
         int grp1X = margin, grp1Y = margin;
         int grp1W = 480, grp1H = 260;
-        CreateWindowExW(0, L"BUTTON", L"\x5E27\x914D\x7F6E",
+        CreateWindowExW(0, L"BUTTON", L"帧配置",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             grp1X, grp1Y, grp1W, grp1H, hwnd, NULL, hInst, NULL);
 
@@ -337,14 +337,14 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
 
         /* Row 2: Frame Format */
         CreateLabel(hwnd, hInst, -1, cx, cy + 3, 70, 22,
-            L"\x5E27\x683C\x5F0F:", pData->hFont);
+            L"帧格式:", pData->hFont);
         pData->hRadioStdFrame = CreateWindowExW(0, L"BUTTON",
-            L"\x6807\x51C6\x5E27",
+            L"标准帧",
             WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
             cx + 78, cy, 90, 24, hwnd, (HMENU)IDC_RADIO_STD_FRAME, hInst, NULL);
         SendMessageW(pData->hRadioStdFrame, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
         pData->hRadioExtFrame = CreateWindowExW(0, L"BUTTON",
-            L"\x6269\x5C55\x5E27",
+            L"扩展帧",
             WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
             cx + 174, cy, 90, 24, hwnd, (HMENU)IDC_RADIO_EXT_FRAME, hInst, NULL);
         SendMessageW(pData->hRadioExtFrame, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
@@ -352,14 +352,14 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
 
         /* Row 3: Frame Type */
         CreateLabel(hwnd, hInst, -1, cx, cy + 3, 70, 22,
-            L"\x5E27\x7C7B\x578B:", pData->hFont);
+            L"帧类型:", pData->hFont);
         pData->hRadioDataFrame = CreateWindowExW(0, L"BUTTON",
-            L"\x6570\x636E\x5E27",
+            L"数据帧",
             WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
             cx + 78, cy, 90, 24, hwnd, (HMENU)IDC_RADIO_DATA_FRAME, hInst, NULL);
         SendMessageW(pData->hRadioDataFrame, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
         pData->hRadioRemoteFrame = CreateWindowExW(0, L"BUTTON",
-            L"\x8FDC\x7A0B\x5E27",
+            L"远程帧",
             WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
             cx + 174, cy, 90, 24, hwnd, (HMENU)IDC_RADIO_REMOTE_FRAME, hInst, NULL);
         SendMessageW(pData->hRadioRemoteFrame, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
@@ -367,7 +367,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
 
         /* Row 4: Data bytes */
         CreateLabel(hwnd, hInst, -1, cx, cy + 3, 70, 22,
-            L"\x6570\x636E:", pData->hFont);
+            L"数据:", pData->hFont);
         pData->hEditCanData = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT",
             L"01 02 03 04 05 06 07 08",
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
@@ -377,7 +377,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
 
         /* Row 5: Send button */
         pData->hBtnSend = CreateWindowExW(0, L"BUTTON",
-            L"\x53D1\x9001\x5E27",
+            L"发送帧",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             grp1X + grp1W - 14 - 140, cy, 140, 32,
             hwnd, (HMENU)IDC_BUTTON_CAN_SEND, hInst, NULL);
@@ -388,7 +388,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         int grp2Y = grp1Y;
         int grp2W = WINDOW_WIDTH - margin - grp2X - margin;
         int grp2H = grp1H;
-        CreateWindowExW(0, L"BUTTON", L"LoRa \x914D\x7F6E",
+        CreateWindowExW(0, L"BUTTON", L"LoRa 配置",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             grp2X, grp2Y, grp2W, grp2H, hwnd, NULL, hInst, NULL);
 
@@ -399,13 +399,13 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         int llW = 60, cbW = 220, cbGap = 20;
 
         CreateLabel(hwnd, hInst, -1, cx, cy + 3, llW, 22,
-            L"\x534F\x8BAE:", pData->hFont);
+            L"协议:", pData->hFont);
         pData->hComboProt = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
             cx + llW + 6, cy, cbW, 200,
             hwnd, (HMENU)IDC_EDIT_LORA_PROT, hInst, NULL);
         SendMessageW(pData->hComboProt, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
-        SendMessageW(pData->hComboProt, CB_ADDSTRING, 0, (LPARAM)L"\x8282\x70B9 (0)");
+        SendMessageW(pData->hComboProt, CB_ADDSTRING, 0, (LPARAM)L"节点 (0)");
         SendMessageW(pData->hComboProt, CB_ADDSTRING, 0, (LPARAM)L"LG210 (1)");
         SendMessageW(pData->hComboProt, CB_ADDSTRING, 0, (LPARAM)L"LG220 (2)");
         SendMessageW(pData->hComboProt, CB_SETCURSEL, 1, 0); /* default LG210 */
@@ -413,21 +413,21 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         int ox2 = cx + llW + 6 + cbW + cbGap;
 
         CreateLabel(hwnd, hInst, -1, ox2, cy + 3, llW, 22,
-            L"\x6A21\x5F0F:", pData->hFont);
+            L"模式:", pData->hFont);
         pData->hComboMode = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
             ox2 + llW + 6, cy, cbW, 200,
             hwnd, (HMENU)IDC_EDIT_LORA_MODE, hInst, NULL);
         SendMessageW(pData->hComboMode, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
-        SendMessageW(pData->hComboMode, CB_ADDSTRING, 0, (LPARAM)L"\x70B9\x5BF9\x70B9 (0)");
-        SendMessageW(pData->hComboMode, CB_ADDSTRING, 0, (LPARAM)L"LG210\x7EC4\x7F51 (1)");
-        SendMessageW(pData->hComboMode, CB_ADDSTRING, 0, (LPARAM)L"LG220\x7EC4\x7F51 (2)");
+        SendMessageW(pData->hComboMode, CB_ADDSTRING, 0, (LPARAM)L"点对点 (0)");
+        SendMessageW(pData->hComboMode, CB_ADDSTRING, 0, (LPARAM)L"LG210组网 (1)");
+        SendMessageW(pData->hComboMode, CB_ADDSTRING, 0, (LPARAM)L"LG220组网 (2)");
         SendMessageW(pData->hComboMode, CB_SETCURSEL, 1, 0); /* default LG210组网 */
         cy += lineH;
 
         /* Row 2: Speed / Channel */
         CreateLabel(hwnd, hInst, -1, cx, cy + 3, llW, 22,
-            L"\x901F\x7387:", pData->hFont);
+            L"速率:", pData->hFont);
         pData->hComboSpd = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
             cx + llW + 6, cy, cbW, 200,
@@ -441,7 +441,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         SendMessageW(pData->hComboSpd, CB_SETCURSEL, 3, 0); /* default 7 */
 
         CreateLabel(hwnd, hInst, -1, ox2, cy + 3, llW, 22,
-            L"\x901A\x9053:", pData->hFont);
+            L"通道:", pData->hFont);
         pData->hComboCh = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
             ox2 + llW + 6, cy, cbW, 200,
@@ -476,21 +476,21 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         HWND hBtn;
 
         hBtn = CreateWindowExW(0, L"BUTTON",
-            L"\x67E5\x8BE2\x914D\x7F6E",
+            L"查询配置",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             cx, cy, bw, bh,
             hwnd, (HMENU)IDC_BUTTON_LORA_QUERY_CFG, hInst, NULL);
         SendMessageW(hBtn, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         hBtn = CreateWindowExW(0, L"BUTTON",
-            L"\x8BBE\x7F6E\x914D\x7F6E",
+            L"设置配置",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             cx + bw + bg, cy, bw, bh,
             hwnd, (HMENU)IDC_BUTTON_LORA_SET_CFG, hInst, NULL);
         SendMessageW(hBtn, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         hBtn = CreateWindowExW(0, L"BUTTON",
-            L"\x67E5\x8BE2 NID",
+            L"查询 NID",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             cx + 2 * (bw + bg), cy, bw, bh,
             hwnd, (HMENU)IDC_BUTTON_LORA_QUERY_NID, hInst, NULL);
@@ -500,21 +500,21 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
 
         /* Row 4: GWID + Set NID buttons */
         hBtn = CreateWindowExW(0, L"BUTTON",
-            L"\x8BBE\x7F6E NID",
+            L"设置 NID",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             cx, cy, bw, bh,
             hwnd, (HMENU)IDC_BUTTON_LORA_SET_NID, hInst, NULL);
         SendMessageW(hBtn, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         hBtn = CreateWindowExW(0, L"BUTTON",
-            L"\x67E5\x8BE2 GWID",
+            L"查询 GWID",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             cx + bw + bg, cy, bw, bh,
             hwnd, (HMENU)IDC_BUTTON_LORA_QUERY_GWID, hInst, NULL);
         SendMessageW(hBtn, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         hBtn = CreateWindowExW(0, L"BUTTON",
-            L"\x8BBE\x7F6E GWID",
+            L"设置 GWID",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             cx + 2 * (bw + bg), cy, bw, bh,
             hwnd, (HMENU)IDC_BUTTON_LORA_SET_GWID, hInst, NULL);
@@ -524,7 +524,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
 
         /* Status label */
         pData->hLabelLoraStatus = CreateWindowExW(0, L"STATIC",
-            L"\x5C31\x7EE0",
+            L"就绪",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
             cx, cy + 2, grp2W - 28, 22,
             hwnd, (HMENU)IDC_LABEL_LORA_STATUS, hInst, NULL);
@@ -538,7 +538,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         int grp3H = WINDOW_HEIGHT - TAB_HEIGHT - STATUSBAR_HEIGHT - margin - grp3Y;
         if (grp3H < 100) grp3H = 100;
         CreateWindowExW(0, L"BUTTON",
-            L"\x603B\x7EBF\x76D1\x89C6",
+            L"总线监视",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             grp3X, grp3Y, grp3W, grp3H, hwnd, NULL, hInst, NULL);
 
@@ -559,14 +559,14 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         cy = grp3Y + grp3H - 34;
 
         pData->hBtnClearMonitor = CreateWindowExW(0, L"BUTTON",
-            L"\x6E05\x9664",
+            L"清除",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             cx - 90, cy, 80, 28,
             hwnd, (HMENU)IDC_BUTTON_CLEAR_MONITOR, hInst, NULL);
         SendMessageW(pData->hBtnClearMonitor, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         pData->hCheckAutoScroll = CreateWindowExW(0, L"BUTTON",
-            L"\x81EA\x52A8\x6EDA\x52A8",
+            L"自动滚动",
             WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
             grp3X + 10, cy, 110, 24,
             hwnd, (HMENU)IDC_CHECK_AUTOSCROLL, hInst, NULL);
@@ -606,8 +606,8 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
                                                is_extended, is_remote);
             if (!result) {
                 MessageBoxW(hwnd,
-                    L"\x53D1\x9001\x5931\x8D25",
-                    L"\x9519\x8BEF",
+                    L"发送失败",
+                    L"错误",
                     MB_OK | MB_ICONERROR);
             }
             return 0;
@@ -670,7 +670,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
                         int spd = fi->data[2];
                         int ch = fi->data[3];
                         wsprintfW(status,
-                            L"\x67E5\x8BE2\x6210\x529F: prot=%d mode=%d spd=%d ch=%d",
+                            L"查询成功: prot=%d mode=%d spd=%d ch=%d",
                             prot, mode, spd, ch);
                         /* Update combo selections */
                         SendMessageW(pData->hComboProt, CB_SETCURSEL, prot, 0);
@@ -679,14 +679,14 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
                             SendMessageW(pData->hComboSpd, CB_SETCURSEL, spd - 4, 0);
                         SendMessageW(pData->hComboCh, CB_SETCURSEL, ch, 0);
                     } else if (!ok) {
-                        wcscpy(status, L"\x67E5\x8BE2\x5931\x8D25");
+                        wcscpy(status, L"查询失败");
                     }
                     break;
                 case LORA_CMD_SET:
                     if (ok)
-                        wcscpy(status, L"\x8BBE\x7F6E\x6210\x529F");
+                        wcscpy(status, L"设置成功");
                     else
-                        wcscpy(status, L"\x8BBE\x7F6E\x5931\x8D25");
+                        wcscpy(status, L"设置失败");
                     break;
                 case LORA_CMD_QUERY_NID:
                 case LORA_CMD_SET_NID:
@@ -697,7 +697,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
                         wsprintfW(nbuf, L"%08X", nid);
                         SetWindowTextW(pData->hEditNid, nbuf);
                     } else if (!ok) {
-                        wcscpy(status, L"NID \x64CD\x4F5C\x5931\x8D25");
+                        wcscpy(status, L"NID 操作失败");
                     }
                     break;
                 case LORA_CMD_QUERY_GWID:
@@ -709,14 +709,14 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
                         wsprintfW(gbuf, L"%08X", gwid);
                         SetWindowTextW(pData->hEditGwid, gbuf);
                     } else if (!ok) {
-                        wcscpy(status, L"GWID \x64CD\x4F5C\x5931\x8D25");
+                        wcscpy(status, L"GWID 操作失败");
                     }
                     break;
                 default:
                     if (ok)
-                        wcscpy(status, L"\x6210\x529F");
+                        wcscpy(status, L"成功");
                     else
-                        wcscpy(status, L"\x5931\x8D25");
+                        wcscpy(status, L"失败");
                     break;
                 }
                 SetWindowTextW(pData->hLabelLoraStatus, status);

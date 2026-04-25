@@ -220,7 +220,7 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
         cy = margin;
 
         /* Port label + ComboBox (160px) */
-        CreateLabel(hwnd, hInst, -1, margin, cy + 11, 40, 20, L"\x7AEF\x53E3:", pData->hFont);
+        CreateLabel(hwnd, hInst, -1, margin, cy + 11, 40, 20, L"端口:", pData->hFont);
         pData->hComboPort = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWN | WS_VSCROLL,
             margin + 44, cy + 6, 160, 200,
@@ -229,7 +229,7 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
 
         /* Baud rate label + ComboBox (140px) */
         CreateLabel(hwnd, hInst, -1, margin + 212, cy + 11, 50, 20,
-            L"\x6CE2\x7279\x7387:", pData->hFont);
+            L"波特率:", pData->hFont);
         pData->hComboBaud = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
             margin + 266, cy + 6, 140, 200,
@@ -238,7 +238,7 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
 
         /* Refresh button (90px) */
         pData->hBtnRefresh = CreateWindowExW(0, L"BUTTON",
-            L"\x5237\x65B0",
+            L"刷新",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             margin + 414, cy + 6, 90, 30,
             hwnd, NULL, hInst, NULL);
@@ -246,7 +246,7 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
 
         /* Connect/Disconnect button (90px) */
         pData->hBtnConnect = CreateWindowExW(0, L"BUTTON",
-            L"\x8FDE\x63A5",
+            L"连接",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             margin + 514, cy + 6, 90, 30,
             hwnd, (HMENU)IDC_BUTTON_UART_CONNECT, hInst, NULL);
@@ -304,7 +304,7 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
 
         /* Clear button */
         pData->hBtnClear = CreateWindowExW(0, L"BUTTON",
-            L"\x6E05\x9664",
+            L"清除",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             margin, tbY, 70, 28,
             hwnd, (HMENU)IDC_BUTTON_UART_CLEAR, hInst, NULL);
@@ -334,7 +334,7 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
                 UartTerminal_StopRecv(pData->uartTerm);
                 UartTerminal_Disconnect(pData->uartTerm);
                 pData->isConnected = 0;
-                SetWindowTextW(pData->hBtnConnect, L"\x8FDE\x63A5");
+                SetWindowTextW(pData->hBtnConnect, L"连接");
                 EnableWindow(pData->hComboPort, TRUE);
                 EnableWindow(pData->hComboBaud, TRUE);
                 EnableWindow(pData->hBtnRefresh, TRUE);
@@ -345,8 +345,8 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
             wchar_t wport[32];
             int sel = (int)SendMessageW(pData->hComboPort, CB_GETCURSEL, 0, 0);
             if (sel == CB_ERR) {
-                MessageBoxW(hwnd, L"\x8BF7\x9009\x62E9\x4E32\x53E3",
-                    L"\x9519\x8BEF", MB_OK | MB_ICONWARNING);
+                MessageBoxW(hwnd, L"请选择串口",
+                    L"错误", MB_OK | MB_ICONWARNING);
                 return 0;
             }
             SendMessageW(pData->hComboPort, CB_GETLBTEXT, sel, (LPARAM)wport);
@@ -359,15 +359,15 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
             int ret = UartTerminal_Connect(pData->uartTerm, port, baud);
             if (!ret) {
                 MessageBoxW(hwnd,
-                    L"\x8FDE\x63A5\x5931\x8D25\xFF0C\x8BF7\x68C0\x67E5\x7AEF\x53E3\x548C\x6CE2\x7279\x7387",
-                    L"\x9519\x8BEF", MB_OK | MB_ICONERROR);
+                    L"连接失败，请检查端口和波特率",
+                    L"错误", MB_OK | MB_ICONERROR);
                 return 0;
             }
 
             pData->isConnected = 1;
             UartTerminal_StartRecv(pData->uartTerm);
 
-            SetWindowTextW(pData->hBtnConnect, L"\x65AD\x5F00");
+            SetWindowTextW(pData->hBtnConnect, L"断开");
             EnableWindow(pData->hComboPort, FALSE);
             EnableWindow(pData->hComboBaud, FALSE);
             EnableWindow(pData->hBtnRefresh, FALSE);
