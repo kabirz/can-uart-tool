@@ -298,26 +298,11 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
         /* ---- Layout coordinates ---- */
         int margin = MARGIN;
         int lineH  = LINE_H;
-
-        /*
-         * Layout overview (1200x1080 window, ~1172x1010 page area):
-         *
-         *  Left column (x=MARGIN, w=580)          Right column (x=600, w=580)
-         *  +---------------------------+          +---------------------------+
-         *  | 连接设置  (160px tall)    |          | 板卡命令  (160px tall)    |
-         *  +---------------------------+          +---------------------------+
-         *  | 固件升级  (180px tall)    |          | (future expansion)        |
-         *  +---------------------------+          +---------------------------+
-         *
-         *  Bottom section (full width, x=MARGIN, w=1144)
-         *  +---------------------------------------------------------------+
-         *  | 日志  (remaining ~620px height)                               |
-         *  +---------------------------------------------------------------+
-         */
+        int lblW   = 104;  /* wider than LABEL_W(72) to fit Chinese labels like "传输模式:" */
 
         /* ========== Group 1: Connection Settings (left column) ========== */
         int grp1X = margin, grp1Y = margin;
-        int grp1W = 580, grp1H = 160;
+        int grp1W = 630, grp1H = 198;
         CreateWindowExW(0, L"BUTTON", L"连接设置",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             grp1X, grp1Y, grp1W, grp1H, hwnd, NULL, hInst, NULL);
@@ -325,35 +310,35 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
         int cx = grp1X + 14, cy = grp1Y + LINE_H;
 
         /* Row 1: Transport mode label + CAN/UART radio buttons */
-        CreateLabel(hwnd, hInst, -1, cx, cy + 3, LABEL_W, CTRL_H, L"传输模式:", pData->hFont);
+        CreateLabel(hwnd, hInst, -1, cx, cy + 3, lblW, CTRL_H, L"传输模式:", pData->hFont);
         pData->hBtnCan = CreateWindowExW(0, L"BUTTON", L"CAN",
             WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
-            cx + LABEL_W + 8, cy, 70, CTRL_H, hwnd, (HMENU)0x9001, hInst, NULL);
+            cx + lblW + 8, cy, 70, CTRL_H, hwnd, (HMENU)0x9001, hInst, NULL);
         SendMessageW(pData->hBtnCan, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         pData->hBtnUart = CreateWindowExW(0, L"BUTTON", L"UART",
             WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-            cx + LABEL_W + 8 + 78, cy, 70, CTRL_H, hwnd, (HMENU)0x9002, hInst, NULL);
+            cx + lblW + 8 + 78, cy, 80, CTRL_H, hwnd, (HMENU)0x9002, hInst, NULL);
         SendMessageW(pData->hBtnUart, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
         cy += lineH;
 
         /* Row 2: Device label + Channel ComboBox + Baud label + Baud ComboBox */
-        CreateLabel(hwnd, hInst, -1, cx, cy + 3, LABEL_W, CTRL_H, L"设备:", pData->hFont);
+        CreateLabel(hwnd, hInst, -1, cx, cy + 3, lblW, CTRL_H, L"设备:", pData->hFont);
         pData->hComboChannel = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-            cx + LABEL_W + 8, cy, 200, 200, hwnd, (HMENU)IDC_COMBO_CHANNEL, hInst, NULL);
+            cx + lblW + 8, cy, 240, 200, hwnd, (HMENU)IDC_COMBO_CHANNEL, hInst, NULL);
         SendMessageW(pData->hComboChannel, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
-        CreateLabel(hwnd, hInst, -1, cx + LABEL_W + 8 + 210, cy + 3, LABEL_W, CTRL_H, L"波特率:", pData->hFont);
+        CreateLabel(hwnd, hInst, -1, cx + lblW + 8 + 250, cy + 3, 72, CTRL_H, L"波特率:", pData->hFont);
         pData->hComboBaudrate = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-            cx + LABEL_W + 8 + 210 + LABEL_W + 8, cy, COMBO_W, 200,
+            cx + lblW + 8 + 250 + 72 + 8, cy, COMBO_W, 200,
             hwnd, (HMENU)IDC_COMBO_BAUDRATE, hInst, NULL);
         SendMessageW(pData->hComboBaudrate, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         pData->hComboUartBaudrate = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | CBS_DROPDOWNLIST | WS_VSCROLL,
-            cx + LABEL_W + 8 + 210 + LABEL_W + 8, cy, COMBO_W, 200,
+            cx + lblW + 8 + 250 + 72 + 8, cy, COMBO_W, 200,
             hwnd, (HMENU)IDC_COMBO_UART_BAUDRATE, hInst, NULL);
         SendMessageW(pData->hComboUartBaudrate, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
         cy += lineH;
@@ -361,12 +346,12 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
         /* Row 3: Refresh + Connect buttons */
         pData->hBtnRefresh = CreateWindowExW(0, L"BUTTON", L"刷新",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            cx + LABEL_W + 8, cy, BTN_W, CTRL_H, hwnd, (HMENU)IDC_BUTTON_REFRESH, hInst, NULL);
+            cx + lblW + 8, cy, BTN_W, CTRL_H, hwnd, (HMENU)IDC_BUTTON_REFRESH, hInst, NULL);
         SendMessageW(pData->hBtnRefresh, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         pData->hBtnConnect = CreateWindowExW(0, L"BUTTON", L"连接",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            cx + LABEL_W + 8 + BTN_W + 10, cy, BTN_W, CTRL_H, hwnd, (HMENU)IDC_BUTTON_CONNECT, hInst, NULL);
+            cx + lblW + 8 + BTN_W + 10, cy, BTN_W, CTRL_H, hwnd, (HMENU)IDC_BUTTON_CONNECT, hInst, NULL);
         SendMessageW(pData->hBtnConnect, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
         cy += lineH;
 
@@ -388,7 +373,7 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
 
         /* ========== Group 2: Firmware Upgrade (left column, below Group 1) ========== */
         int grp2X = margin, grp2Y = grp1Y + grp1H + 8;
-        int grp2W = 580, grp2H = 180;
+        int grp2W = 630, grp2H = 200;
         CreateWindowExW(0, L"BUTTON", L"固件升级",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             grp2X, grp2Y, grp2W, grp2H, hwnd, NULL, hInst, NULL);
@@ -396,16 +381,16 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
         cx = grp2X + 14;
         cy = grp2Y + LINE_H;
 
-        /* Row 1: Firmware file label + Edit(wider ~350px) + Browse button */
-        CreateLabel(hwnd, hInst, -1, cx, cy + 3, LABEL_W, CTRL_H, L"固件文件:", pData->hFont);
+        /* Row 1: Firmware file label + Edit + Browse button */
+        CreateLabel(hwnd, hInst, -1, cx, cy + 3, lblW, CTRL_H, L"固件文件:", pData->hFont);
         pData->hEditFirmware = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_READONLY,
-            cx + LABEL_W + 8, cy, 350, CTRL_H, hwnd, (HMENU)IDC_EDIT_FIRMWARE, hInst, NULL);
+            cx + lblW + 8, cy, 350, CTRL_H, hwnd, (HMENU)IDC_EDIT_FIRMWARE, hInst, NULL);
         SendMessageW(pData->hEditFirmware, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         pData->hBtnBrowse = CreateWindowExW(0, L"BUTTON", L"浏览...",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            cx + LABEL_W + 8 + 358, cy, BTN_W, CTRL_H, hwnd, (HMENU)IDC_BUTTON_BROWSE, hInst, NULL);
+            cx + lblW + 8 + 358, cy, BTN_W, CTRL_H, hwnd, (HMENU)IDC_BUTTON_BROWSE, hInst, NULL);
         SendMessageW(pData->hBtnBrowse, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
         cy += lineH;
 
@@ -416,30 +401,30 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
         SendMessageW(pData->hCheckTestMode, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
         cy += lineH;
 
-        /* Row 3: Progress label + Progress bar(~400px) + percentage + Start upgrade button */
-        CreateLabel(hwnd, hInst, -1, cx, cy + 3, LABEL_W, CTRL_H, L"进度:", pData->hFont);
+        /* Row 3: Progress label + Progress bar + percentage + Start upgrade button */
+        CreateLabel(hwnd, hInst, -1, cx, cy + 3, lblW, CTRL_H, L"进度:", pData->hFont);
         pData->hProgress = CreateWindowExW(0, PROGRESS_CLASSW, NULL,
             WS_CHILD | WS_VISIBLE,
-            cx + LABEL_W + 8, cy, 400, 20, hwnd, (HMENU)IDC_PROGRESS, hInst, NULL);
+            cx + lblW + 8, cy, 290, CTRL_H, hwnd, (HMENU)IDC_PROGRESS, hInst, NULL);
         SendMessageW(pData->hProgress, PBM_SETRANGE, 0, MAKELPARAM(0, 100));
         SendMessageW(pData->hProgress, PBM_SETPOS, 0, 0);
 
         pData->hLabelPercent = CreateWindowExW(0, L"STATIC", L"0%",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
-            cx + LABEL_W + 8 + 408, cy, 50, 20, hwnd, (HMENU)IDC_LABEL_PERCENT, hInst, NULL);
+            cx + lblW + 8 + 298, cy + 3, 44, CTRL_H, hwnd, (HMENU)IDC_LABEL_PERCENT, hInst, NULL);
         SendMessageW(pData->hLabelPercent, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         pData->hBtnFlash = CreateWindowExW(0, L"BUTTON", L"开始升级",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            cx + LABEL_W + 8 + 408 + 58, cy - 2, BTN_W + 10, CTRL_H,
+            cx + lblW + 8 + 298 + 50, cy, BTN_W + 10, CTRL_H,
             hwnd, (HMENU)IDC_BUTTON_FLASH, hInst, NULL);
         SendMessageW(pData->hBtnFlash, WM_SETFONT, (WPARAM)pData->hFontBold, TRUE);
         EnableWindow(pData->hBtnFlash, FALSE);
-        cy += lineH + 4;
 
         /* ========== Group 3: Board Commands (right column) ========== */
-        int grp3X = 600, grp3Y = margin;
-        int grp3W = 560, grp3H = 160;
+        int grp3X = grp1X + grp1W + 8, grp3Y = margin;
+        int grp3W = WINDOW_WIDTH - margin - grp3X;
+        int grp3H = grp1H;
         CreateWindowExW(0, L"BUTTON", L"板卡命令",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             grp3X, grp3Y, grp3W, grp3H, hwnd, NULL, hInst, NULL);
@@ -462,8 +447,9 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
         /* ========== Group 4: Log Area (full width bottom section) ========== */
         int logGrpX = margin;
         int logGrpY = grp2Y + grp2H + 8;
-        int logGrpW = WINDOW_WIDTH - 2 * margin;          /* ~1172 */
-        int logGrpH = WINDOW_HEIGHT - margin - logGrpY - margin;  /* remaining height */
+        int logGrpW = WINDOW_WIDTH - 2 * margin;
+        int logGrpH = WINDOW_HEIGHT - TAB_HEIGHT - STATUSBAR_HEIGHT - margin - logGrpY;
+        if (logGrpH < 100) logGrpH = 100;
         CreateWindowExW(0, L"BUTTON", L"日志",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             logGrpX, logGrpY, logGrpW, logGrpH, hwnd, NULL, hInst, NULL);
@@ -473,6 +459,7 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
         int logEditY = logGrpY + LINE_H - 2;
         int logEditW = logGrpW - BTN_W - 30;   /* leave room for clear button */
         int logEditH = logGrpH - LINE_H - 8;
+        if (logEditH < 50) logEditH = 50;
         pData->hEditLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | WS_VSCROLL |
             ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,

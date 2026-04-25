@@ -213,12 +213,12 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
 
         /* Create fonts */
         pData->hFont = CreateFontW(
-            14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            24, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
             L"Microsoft YaHei");
         pData->hFontMono = CreateFontW(
-            16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            20, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN,
             L"Consolas");
@@ -306,7 +306,7 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
         cf.cbSize = sizeof(cf);
         cf.dwMask = CFM_COLOR | CFM_FACE | CFM_SIZE;
         cf.crTextColor = RGB(0xCC, 0xCC, 0xCC);
-        cf.yHeight = 280;  /* 14pt = 280 twips */
+        cf.yHeight = 400;  /* 20pt = 400 twips */
         wcscpy(cf.szFaceName, L"Consolas");
         SendMessageW(pData->hEditTerminal, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
         SendMessageW(pData->hEditTerminal, EM_SETEVENTMASK, 0, ENM_KEYEVENTS);

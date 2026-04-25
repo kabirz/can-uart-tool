@@ -48,6 +48,21 @@
 #define IDC_CHECK_AUTOSCROLL            1209
 #define IDC_BUTTON_CLEAR_MONITOR        1210
 
+// Tab2: CAN 命令 - LoRa 配置 (1220-1250)
+#define IDC_EDIT_LORA_PROT              1220
+#define IDC_EDIT_LORA_MODE              1221
+#define IDC_EDIT_LORA_SPD               1222
+#define IDC_EDIT_LORA_CH                1223
+#define IDC_EDIT_LORA_NID               1224
+#define IDC_EDIT_LORA_GWID              1225
+#define IDC_BUTTON_LORA_QUERY_CFG       1226
+#define IDC_BUTTON_LORA_SET_CFG         1227
+#define IDC_BUTTON_LORA_QUERY_NID       1228
+#define IDC_BUTTON_LORA_SET_NID         1229
+#define IDC_BUTTON_LORA_QUERY_GWID      1230
+#define IDC_BUTTON_LORA_SET_GWID        1231
+#define IDC_LABEL_LORA_STATUS           1232
+
 // Tab3: UART Shell 终端 (1300-1399)
 #define IDC_COMBO_UART_PORT             1301
 #define IDC_COMBO_UART_TERM_BAUD        1302
@@ -77,15 +92,15 @@
 // Layout constants
 #define WINDOW_WIDTH                    1200
 #define WINDOW_HEIGHT                   1080
-#define TAB_HEIGHT                      28
-#define STATUSBAR_HEIGHT                22
-#define MARGIN                          14
-#define LINE_H                          30
-#define CTRL_H                          28
-#define BTN_W                           90
-#define COMBO_W                         140
-#define LABEL_W                         60
-#define FONT_H                          16
+#define TAB_HEIGHT                      36
+#define STATUSBAR_HEIGHT                28
+#define MARGIN                          16
+#define LINE_H                          38
+#define CTRL_H                          34
+#define BTN_W                           110
+#define COMBO_W                         160
+#define LABEL_W                         72
+#define FONT_H                          24
 
 #define IDC_STATIC                      (-1)
 

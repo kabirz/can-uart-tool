@@ -150,11 +150,14 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 
         /* Set tab control font */
         g_App.hTabFont = CreateFontW(
-            14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            28, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
             L"Microsoft YaHei");
         SendMessageW(g_App.hTabCtrl, WM_SETFONT, (WPARAM)g_App.hTabFont, TRUE);
+
+        /* Increase tab label spacing (horizontal, vertical padding) */
+        SendMessageW(g_App.hTabCtrl, TCM_SETPADDING, 0, MAKELPARAM(24, 4));
 
         /* Insert tabs */
         TCITEMW tie;
@@ -174,7 +177,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 
         /* Create UI font for tab pages */
         g_App.hFont = CreateFontW(
-            14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            24, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
             L"Microsoft YaHei");
@@ -191,11 +194,53 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 
     case WM_NOTIFY: {
         NMHDR *pnm = (NMHDR *)lParam;
-        if (pnm->idFrom == IDC_TAB_CONTROL && pnm->code == TCN_SELCHANGE) {
-            int sel = TabCtrl_GetCurSel(g_App.hTabCtrl);
-            int i;
-            for (i = 0; i < MAX_TABS; i++) {
-                ShowWindow(g_App.hTabPages[i], (i == sel) ? SW_SHOW : SW_HIDE);
+        if (pnm->idFrom == IDC_TAB_CONTROL) {
+            if (pnm->code == TCN_SELCHANGE) {
+                int sel = TabCtrl_GetCurSel(g_App.hTabCtrl);
+                int i;
+                for (i = 0; i < MAX_TABS; i++) {
+                    ShowWindow(g_App.hTabPages[i], (i == sel) ? SW_SHOW : SW_HIDE);
+                }
+            }
+            else if (pnm->code == NM_CUSTOMDRAW) {
+                NMCUSTOMDRAW *cd = (NMCUSTOMDRAW *)lParam;
+                switch (cd->dwDrawStage) {
+                case CDDS_PREPAINT:
+                    SetWindowLongPtrW(hWnd, DWLP_MSGRESULT, CDRF_NOTIFYITEMDRAW);
+                    return TRUE;
+                case CDDS_ITEMPREPAINT: {
+                    int sel = TabCtrl_GetCurSel(g_App.hTabCtrl);
+                    int idx = (int)cd->dwItemSpec;
+                    HDC hdc = cd->hdc;
+                    RECT rc = cd->rc;
+
+                    /* Extend tab rect to fill gap at bottom */
+                    rc.bottom += 4;
+
+                    HBRUSH hBrush;
+                    if (idx == sel) {
+                        /* Selected: blue background, white text */
+                        hBrush = CreateSolidBrush(RGB(0x00, 0x78, 0xD4));
+                        FillRect(hdc, &rc, hBrush);
+                        DeleteObject(hBrush);
+                        SetTextColor(hdc, RGB(0xFF, 0xFF, 0xFF));
+                    } else {
+                        /* Unselected: light gray background, dark text */
+                        FillRect(hdc, &rc, (HBRUSH)GetSysColorBrush(COLOR_BTNFACE));
+                        SetTextColor(hdc, RGB(0x33, 0x33, 0x33));
+                    }
+                    SetBkMode(hdc, TRANSPARENT);
+
+                    /* Draw tab text centered */
+                    SelectObject(hdc, g_App.hTabFont);
+                    RECT textRc = rc;
+                    DrawTextW(hdc, g_TabNames[idx], -1, &textRc,
+                              DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+                    SetWindowLongPtrW(hWnd, DWLP_MSGRESULT, CDRF_SKIPDEFAULT);
+                    return TRUE;
+                }
+                }
             }
         }
         return 0;

@@ -28,7 +28,6 @@ typedef struct {
     HWND hBtnConnect;
     HWND hEditTerminal;
     HWND hBtnClear;
-    HWND hLabelStatus;
 
     /* Subclass */
     WNDPROC origRichEditProc;
@@ -196,17 +195,17 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
 
         /* Create fonts */
         pData->hFont = CreateFontW(
-            14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            24, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
             L"Microsoft YaHei");
         pData->hFontBold = CreateFontW(
-            14, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+            24, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
             L"Microsoft YaHei");
         pData->hFontMono = CreateFontW(
-            13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            20, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN,
             L"Consolas");
@@ -285,7 +284,7 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
             cf.cbSize = sizeof(cf);
             cf.dwMask = CFM_COLOR | CFM_FACE | CFM_SIZE;
             cf.crTextColor = RGB(0xCC, 0xCC, 0xCC);
-            cf.yHeight = 280; /* 14pt in twips */
+            cf.yHeight = 400; /* 20pt in twips */
             wcscpy(cf.szFaceName, L"Consolas");
             SendMessageW(pData->hEditTerminal, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
 
@@ -310,17 +309,6 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
             margin, tbY, 70, 28,
             hwnd, (HMENU)IDC_BUTTON_UART_CLEAR, hInst, NULL);
         SendMessageW(pData->hBtnClear, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
-
-        /* Status label with more key hints */
-        pData->hLabelStatus = CreateWindowExW(0, L"STATIC",
-            L"Zephyr Shell \x6A21\x5F0F  "
-            L"Tab=\x8865\x5168  "
-            L"\x2191\x2193=\x5386\x53F2  "
-            L"Home/End=\x884C\x9996/\x884C\x5C3E",
-            WS_CHILD | WS_VISIBLE | SS_LEFT,
-            margin + 80, tbY + 5, 600, 20,
-            hwnd, NULL, hInst, NULL);
-        SendMessageW(pData->hLabelStatus, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         /* Set UART receive callback */
         UartTerminal_SetRecvCallback(pData->uartTerm, UartTerm_OnRecv, (void *)hwnd);
