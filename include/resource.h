@@ -75,10 +75,17 @@
 #define WM_CAN_DISCONNECTED             (WM_APP + 7)
 
 // Layout constants
-#define WINDOW_WIDTH                    800
-#define WINDOW_HEIGHT                   560
+#define WINDOW_WIDTH                    1200
+#define WINDOW_HEIGHT                   1080
 #define TAB_HEIGHT                      28
 #define STATUSBAR_HEIGHT                22
+#define MARGIN                          14
+#define LINE_H                          30
+#define CTRL_H                          28
+#define BTN_W                           90
+#define COMBO_W                         140
+#define LABEL_W                         60
+#define FONT_H                          16
 
 #define IDC_STATIC                      (-1)
 
