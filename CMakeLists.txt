@@ -5,6 +5,8 @@ add_compile_definitions(UNICODE _UNICODE)
 
 set(SOURCES
     src/main.c
+    src/can_manager.c
+    src/uart_manager.c
 )
 
 set(RESOURCES
