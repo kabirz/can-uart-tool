@@ -1,12 +1,18 @@
 /**
  * CAN/UART Tool - Main Window with Tab Control
  */
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <winsock2.h>
 #include <windows.h>
 #include <commctrl.h>
 #include "resource.h"
 #include "can_manager.h"
 #include "uart_manager.h"
 #include "can_command.h"
+#include "uart_terminal.h"
+#include "net_terminal.h"
 
 /* Forward declarations for tab page creation */
 extern HWND TabCanUpgrade_Create(HWND hParent, HINSTANCE hInst, CanManager *can_mgr, UartManager *uart_mgr);
@@ -14,6 +20,10 @@ extern void TabCanUpgrade_Destroy(HWND hwnd);
 extern HWND TabCanCommand_Create(HWND hParent, HINSTANCE hInst, CanCommand *cmd);
 extern void TabCanCommand_Destroy(HWND hwnd);
 extern void TabCanCommand_UpdateChannel(HWND hwnd, TPCANHandle channel);
+extern HWND TabUartTerminal_Create(HWND hParent, HINSTANCE hInst, UartTerminal *uartTerm);
+extern void TabUartTerminal_Destroy(HWND hwnd);
+extern HWND TabNetTerminal_Create(HWND hParent, HINSTANCE hInst, NetTerminal *netTerm);
+extern void TabNetTerminal_Destroy(HWND hwnd);
 
 #define MAX_TABS 4
 
@@ -40,6 +50,8 @@ typedef struct {
     CanManager  *canMgr;
     UartManager *uartMgr;
     CanCommand  *canCmd;
+    UartTerminal *uartTerm;
+    NetTerminal  *netTerm;
 } APP_DATA;
 
 static APP_DATA g_App;
@@ -74,17 +86,11 @@ static void CreateTabPages(HWND hTabCtrl, HINSTANCE hInst)
     /* Tab 1: CAN Command page */
     g_App.hTabPages[1] = TabCanCommand_Create(hTabCtrl, hInst, g_App.canCmd);
 
-    /* Tabs 2-3: placeholder static controls */
-    for (i = 2; i < MAX_TABS; i++) {
-        g_App.hTabPages[i] = CreateWindowExW(
-            0, L"STATIC", g_TabPlaceholders[i],
-            WS_CHILD | WS_VISIBLE | SS_CENTER | SS_CENTERIMAGE,
-            rc.left, rc.top,
-            rc.right - rc.left,
-            rc.bottom - rc.top,
-            hTabCtrl, (HMENU)(INT_PTR)(IDC_STATIC + i), hInst, NULL);
-        SendMessageW(g_App.hTabPages[i], WM_SETFONT, (WPARAM)g_App.hFont, TRUE);
-    }
+    /* Tab 2: UART Shell Terminal */
+    g_App.hTabPages[2] = TabUartTerminal_Create(hTabCtrl, hInst, g_App.uartTerm);
+
+    /* Tab 3: TCP/UDP Network Terminal */
+    g_App.hTabPages[3] = TabNetTerminal_Create(hTabCtrl, hInst, g_App.netTerm);
 
     /* Show only the first tab page */
     ShowWindow(g_App.hTabPages[0], SW_SHOW);
@@ -222,6 +228,10 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
         g_App.hTabPages[0] = NULL;
         TabCanCommand_Destroy(g_App.hTabPages[1]);
         g_App.hTabPages[1] = NULL;
+        TabUartTerminal_Destroy(g_App.hTabPages[2]);
+        g_App.hTabPages[2] = NULL;
+        TabNetTerminal_Destroy(g_App.hTabPages[3]);
+        g_App.hTabPages[3] = NULL;
 
         if (g_App.hFont) {
             DeleteObject(g_App.hFont);
@@ -233,6 +243,14 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
         }
 
         /* Destroy managers */
+        if (g_App.netTerm) {
+            NetTerminal_Destroy(g_App.netTerm);
+            g_App.netTerm = NULL;
+        }
+        if (g_App.uartTerm) {
+            UartTerminal_Destroy(g_App.uartTerm);
+            g_App.uartTerm = NULL;
+        }
         if (g_App.canCmd) {
             CanCommand_Destroy(g_App.canCmd);
             g_App.canCmd = NULL;
@@ -279,6 +297,27 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     g_App.canCmd = CanCommand_Create(PCAN_NONEBUS);
     if (!g_App.canCmd) {
         MessageBoxW(NULL, L"无法创建CAN命令模块", L"错误", MB_OK | MB_ICONERROR);
+        UartManager_Destroy(g_App.uartMgr);
+        CanManager_Destroy(g_App.canMgr);
+        return 1;
+    }
+
+    /* Create UartTerminal module */
+    g_App.uartTerm = UartTerminal_Create();
+    if (!g_App.uartTerm) {
+        MessageBoxW(NULL, L"无法创建UART终端模块", L"错误", MB_OK | MB_ICONERROR);
+        CanCommand_Destroy(g_App.canCmd);
+        UartManager_Destroy(g_App.uartMgr);
+        CanManager_Destroy(g_App.canMgr);
+        return 1;
+    }
+
+    /* Create NetTerminal module */
+    g_App.netTerm = NetTerminal_Create();
+    if (!g_App.netTerm) {
+        MessageBoxW(NULL, L"无法创建网络终端模块", L"错误", MB_OK | MB_ICONERROR);
+        UartTerminal_Destroy(g_App.uartTerm);
+        CanCommand_Destroy(g_App.canCmd);
         UartManager_Destroy(g_App.uartMgr);
         CanManager_Destroy(g_App.canMgr);
         return 1;
