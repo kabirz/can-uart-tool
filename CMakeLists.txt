@@ -33,7 +33,9 @@ if(MINGW)
     )
 elseif(MSVC)
     target_compile_options(can-uart-tool PRIVATE /utf-8)
-    set_target_properties(can-uart-tool PROPERTIES LINK_FLAGS "/SUBSYSTEM:WINDOWS")
+    set_target_properties(can-uart-tool PROPERTIES
+        LINK_FLAGS "/SUBSYSTEM:WINDOWS /MANIFEST:NO"
+    )
 endif()
 
 if(MINGW)

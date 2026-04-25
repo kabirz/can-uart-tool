@@ -3,6 +3,13 @@
 
 #pragma code_page(65001)
 
+// DPI 感知 manifest — 防止高 DPI 下字体模糊
+#ifndef RT_MANIFEST
+#define RT_MANIFEST 24
+#endif
+
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "app.manifest"
+
 IDI_APPICON ICON "icon.ico"
 
 IDR_MAINMENU MENU
