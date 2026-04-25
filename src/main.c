@@ -29,7 +29,7 @@ extern void TabNetTerminal_Destroy(HWND hwnd);
 #define MAX_TABS 4
 
 static const wchar_t *g_TabNames[MAX_TABS] = {
-    L"CAN/UART 升级",
+    L"固件升级",
     L"CAN 命令",
     L"UART 终端",
     L"网络终端"
@@ -274,9 +274,16 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
             return 0;
         case IDM_HELP_ABOUT:
             MessageBoxW(hWnd,
-                        L"CAN/UART 工具 v1.0\n\n"
-                        L"基于 PCAN 的 CAN/UART 调试工具",
-                        L"关于",
+                        L"CAN/UART 工具 v0.1.1\n"
+                        L"基于 Win32 API 的 CAN/UART 调试工具\n\n"
+                        L"功能：\n"
+                        L"  - CAN/UART 固件升级\n"
+                        L"  - CAN 帧收发与监控\n"
+                        L"  - UART Shell 终端（ANSI 颜色）\n"
+                        L"  - TCP/UDP 网络终端\n\n"
+                        L"依赖：PCAN-Basic SDK\n"
+                        L"编译：CMake + Visual Studio 2026",
+                        L"关于 CAN/UART 工具",
                         MB_OK | MB_ICONINFORMATION);
             return 0;
         }
@@ -419,15 +426,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     RECT  rcWin;
     CalcWindowRectFromClient(dwStyle, dwExStyle, WINDOW_WIDTH, WINDOW_HEIGHT, &rcWin);
 
-    /* Create main window */
+    /* Create main window centered on screen */
+    int winW = rcWin.right - rcWin.left;
+    int winH = rcWin.bottom - rcWin.top;
+    int screenW = GetSystemMetrics(SM_CXSCREEN);
+    int screenH = GetSystemMetrics(SM_CYSCREEN);
+    int posX = (screenW - winW) / 2;
+    int posY = (screenH - winH) / 2;
+
     hWnd = CreateWindowExW(
         dwExStyle,
         L"CanUartToolClass",
         L"CAN/UART 工具",
         dwStyle,
-        CW_USEDEFAULT, CW_USEDEFAULT,
-        rcWin.right - rcWin.left,
-        rcWin.bottom - rcWin.top,
+        posX, posY,
+        winW, winH,
         NULL,
         LoadMenuW(hInstance, MAKEINTRESOURCEW(IDR_MAINMENU)),
         hInstance,

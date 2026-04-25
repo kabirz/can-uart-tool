@@ -224,23 +224,23 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
         int cx, cy;
 
         /* ========== Connection Bar (top, full width) ========== */
-        /* Height: 42px, y = 10, controls vertically centered */
-        cy = margin;
+        int barY = margin;
+        int barH = 42;
 
         /* Port label + ComboBox (160px) */
-        CreateLabel(hwnd, hInst, -1, margin, cy + 11, 40, 20, L"端口:", pData->hFont);
+        CreateLabel(hwnd, hInst, -1, margin, barY + 10, 40, 20, L"端口:", pData->hFont);
         pData->hComboPort = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWN | WS_VSCROLL,
-            margin + 44, cy + 6, 160, 200,
+            margin + 44, barY + 6, 160, 200,
             hwnd, (HMENU)IDC_COMBO_UART_PORT, hInst, NULL);
         SendMessageW(pData->hComboPort, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         /* Baud rate label + ComboBox (140px) */
-        CreateLabel(hwnd, hInst, -1, margin + 212, cy + 11, 50, 20,
+        CreateLabel(hwnd, hInst, -1, margin + 212, barY + 10, 68, 20,
             L"波特率:", pData->hFont);
         pData->hComboBaud = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-            margin + 266, cy + 6, 140, 200,
+            margin + 284, barY + 6, 140, 200,
             hwnd, (HMENU)IDC_COMBO_UART_TERM_BAUD, hInst, NULL);
         InitBaudRates(pData->hComboBaud, pData->hFont);
 
@@ -248,7 +248,7 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
         pData->hBtnRefresh = CreateWindowExW(0, L"BUTTON",
             L"刷新",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            margin + 414, cy + 6, 90, 30,
+            margin + 432, barY + 6, 90, 30,
             hwnd, NULL, hInst, NULL);
         SendMessageW(pData->hBtnRefresh, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
@@ -256,7 +256,7 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
         pData->hBtnConnect = CreateWindowExW(0, L"BUTTON",
             L"连接",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            margin + 514, cy + 6, 90, 30,
+            margin + 532, barY + 6, 90, 30,
             hwnd, (HMENU)IDC_BUTTON_UART_CONNECT, hInst, NULL);
         SendMessageW(pData->hBtnConnect, WM_SETFONT, (WPARAM)pData->hFontBold, TRUE);
 
@@ -264,11 +264,10 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
         RefreshPortList(pData);
 
         /* ========== Terminal Display (main area) ========== */
-        /* (10, 56, 1152, 900) */
         int termX = margin;
-        int termY = 56;
+        int termY = barY + barH + 4;
         int termW = 1152;
-        int termH = 900;
+        int termH = 920;
 
         /* Load RichEdit module */
         static HMODULE hRichEdit = NULL;
@@ -309,7 +308,7 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
         }
 
         /* ========== Bottom Toolbar ========== */
-        int tbY = 960;
+        int tbY = 976;
 
         /* Clear button */
         pData->hBtnClear = CreateWindowExW(0, L"BUTTON",
@@ -322,6 +321,35 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
         /* Set UART receive callback */
         UartTerminal_SetRecvCallback(pData->uartTerm, UartTerm_OnRecv, (void *)hwnd);
 
+        return 0;
+    }
+
+    /* ---- WM_SIZE: resize child controls ---- */
+    case WM_SIZE: {
+        if (!pData) break;
+
+        int cxClient = LOWORD(lParam);
+        int cyClient = HIWORD(lParam);
+        int margin = 10;
+        int barH = 42;
+        int tbH = 40;
+
+        int termX = margin;
+        int termY = barH + margin + 4;
+        int termW = cxClient - 2 * margin;
+        int termH = cyClient - termY - tbH - margin;
+
+        if (termW < 100) termW = 100;
+        if (termH < 50) termH = 50;
+
+        if (pData->hEditTerminal) {
+            MoveWindow(pData->hEditTerminal, termX, termY, termW, termH, TRUE);
+        }
+
+        int tbY = cyClient - tbH;
+        if (pData->hBtnClear) {
+            MoveWindow(pData->hBtnClear, margin, tbY, 70, 28, TRUE);
+        }
         return 0;
     }
 

@@ -72,19 +72,17 @@ static HWND CreateLabel(HWND hParent, HINSTANCE hInst, int id,
 static void UpdateConnectionUI(TAB_NET_DATA *pData, int connected)
 {
     if (connected) {
-        SetWindowTextW(pData->hBtnConnect, L"断开");  /* "断开" */
+        SetWindowTextW(pData->hBtnConnect, L"断开");
         EnableWindow(pData->hRadioTcp, FALSE);
         EnableWindow(pData->hRadioUdp, FALSE);
         EnableWindow(pData->hEditHost, FALSE);
         EnableWindow(pData->hEditPort, FALSE);
-        SetWindowTextW(pData->hLabelStatus, L"已连接 - Raw 透传模式");
     } else {
-        SetWindowTextW(pData->hBtnConnect, L"连接");  /* "连接" */
+        SetWindowTextW(pData->hBtnConnect, L"连接");
         EnableWindow(pData->hRadioTcp, TRUE);
         EnableWindow(pData->hRadioUdp, TRUE);
         EnableWindow(pData->hEditHost, TRUE);
         EnableWindow(pData->hEditPort, TRUE);
-        SetWindowTextW(pData->hLabelStatus, L"Raw 透传模式");
     }
 }
 
@@ -282,10 +280,10 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
         SendMessageW(pData->hBtnConnect, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         /* ========== Terminal Display (main area) ========== */
-        int termX = 10;
-        int termY = 56;
+        int termX = margin;
+        int termY = barY + barH + 4;
         int termW = 1152;
-        int termH = 900;
+        int termH = 920;
 
         /* Load RichEdit library */
         static HMODULE hRichEdit = NULL;
@@ -321,23 +319,15 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
         Terminal_SetSendFunc(pData->termCtx, NetSendFunc, pData);
 
         /* ========== Bottom Toolbar ========== */
-        int tbY = 960;
+        int tbY = 976;
 
         /* Clear button */
         pData->hBtnClear = CreateWindowExW(0, L"BUTTON",
             L"清除",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            margin, tbY, 80, 26,
+            margin, tbY, 70, 28,
             hwnd, (HMENU)IDC_BUTTON_NET_CLEAR, hInst, NULL);
         SendMessageW(pData->hBtnClear, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
-
-        /* Status label */
-        pData->hLabelStatus = CreateWindowExW(0, L"STATIC",
-            L"Raw 透传模式",
-            WS_CHILD | WS_VISIBLE | SS_LEFT,
-            margin + 90, tbY + 4, 240, 22,
-            hwnd, NULL, hInst, NULL);
-        SendMessageW(pData->hLabelStatus, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         /* Set up receive callback */
         NetTerminal_SetRecvCallback(pData->netTerm, NetTerm_OnRecv, (void *)hwnd);
@@ -355,11 +345,11 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
         int cxClient = LOWORD(lParam);
         int cyClient = HIWORD(lParam);
         int margin = 10;
-        int barH = 46;   /* Connection bar height */
-        int tbH = 40;    /* Bottom toolbar height */
+        int barH = 42;
+        int tbH = 40;
 
         int termX = margin;
-        int termY = barH + margin;
+        int termY = barH + margin + 4;
         int termW = cxClient - 2 * margin;
         int termH = cyClient - termY - tbH - margin;
 
@@ -372,10 +362,7 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
 
         int tbY = cyClient - tbH;
         if (pData->hBtnClear) {
-            MoveWindow(pData->hBtnClear, margin, tbY, 80, 26, TRUE);
-        }
-        if (pData->hLabelStatus) {
-            MoveWindow(pData->hLabelStatus, margin + 90, tbY + 4, 300, 22, TRUE);
+            MoveWindow(pData->hBtnClear, margin, tbY, 70, 28, TRUE);
         }
         return 0;
     }
