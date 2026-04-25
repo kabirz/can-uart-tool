@@ -211,44 +211,45 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
             CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN,
             L"Consolas");
 
-        /* ---- Layout ---- */
+        /* ---- Layout for 1200x1080 client area ---- */
+        /* Tab page display area ~1172 x 1010 */
         int margin = 10;
-        int lineH = 26;
         int cx, cy;
 
-        /* ========== Connection Bar (top) ========== */
+        /* ========== Connection Bar (top, full width) ========== */
+        /* Height: 42px, y = 10, controls vertically centered */
         cy = margin;
 
-        /* Port label + ComboBox */
-        CreateLabel(hwnd, hInst, -1, margin, cy + 3, 40, 20, L"\x7AEF\x53E3:", pData->hFont);
+        /* Port label + ComboBox (160px) */
+        CreateLabel(hwnd, hInst, -1, margin, cy + 11, 40, 20, L"\x7AEF\x53E3:", pData->hFont);
         pData->hComboPort = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWN | WS_VSCROLL,
-            margin + 44, cy, 120, 200,
+            margin + 44, cy + 6, 160, 200,
             hwnd, (HMENU)IDC_COMBO_UART_PORT, hInst, NULL);
         SendMessageW(pData->hComboPort, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
-        /* Baud rate label + ComboBox */
-        CreateLabel(hwnd, hInst, -1, margin + 170, cy + 3, 50, 20,
+        /* Baud rate label + ComboBox (140px) */
+        CreateLabel(hwnd, hInst, -1, margin + 212, cy + 11, 50, 20,
             L"\x6CE2\x7279\x7387:", pData->hFont);
         pData->hComboBaud = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-            margin + 224, cy, 110, 200,
+            margin + 266, cy + 6, 140, 200,
             hwnd, (HMENU)IDC_COMBO_UART_TERM_BAUD, hInst, NULL);
         InitBaudRates(pData->hComboBaud, pData->hFont);
 
-        /* Refresh button */
+        /* Refresh button (90px) */
         pData->hBtnRefresh = CreateWindowExW(0, L"BUTTON",
             L"\x5237\x65B0",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            margin + 342, cy, 55, 24,
+            margin + 414, cy + 6, 90, 30,
             hwnd, NULL, hInst, NULL);
         SendMessageW(pData->hBtnRefresh, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
-        /* Connect/Disconnect button */
+        /* Connect/Disconnect button (90px) */
         pData->hBtnConnect = CreateWindowExW(0, L"BUTTON",
             L"\x8FDE\x63A5",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            margin + 405, cy, 70, 24,
+            margin + 514, cy + 6, 90, 30,
             hwnd, (HMENU)IDC_BUTTON_UART_CONNECT, hInst, NULL);
         SendMessageW(pData->hBtnConnect, WM_SETFONT, (WPARAM)pData->hFontBold, TRUE);
 
@@ -256,10 +257,11 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
         RefreshPortList(pData);
 
         /* ========== Terminal Display (main area) ========== */
+        /* (10, 56, 1152, 900) */
         int termX = margin;
-        int termY = cy + lineH + 4;
-        int termW = 760;
-        int termH = 420;
+        int termY = 56;
+        int termW = 1152;
+        int termH = 900;
 
         /* Load RichEdit module */
         static HMODULE hRichEdit = NULL;
@@ -283,7 +285,7 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
             cf.cbSize = sizeof(cf);
             cf.dwMask = CFM_COLOR | CFM_FACE | CFM_SIZE;
             cf.crTextColor = RGB(0xCC, 0xCC, 0xCC);
-            cf.yHeight = 240; /* 12pt in twips */
+            cf.yHeight = 280; /* 14pt in twips */
             wcscpy(cf.szFaceName, L"Consolas");
             SendMessageW(pData->hEditTerminal, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
 
@@ -299,24 +301,24 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
         }
 
         /* ========== Bottom Toolbar ========== */
-        int tbY = termY + termH + 6;
+        int tbY = 960;
 
         /* Clear button */
         pData->hBtnClear = CreateWindowExW(0, L"BUTTON",
             L"\x6E05\x9664",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            margin, tbY, 60, 24,
+            margin, tbY, 70, 28,
             hwnd, (HMENU)IDC_BUTTON_UART_CLEAR, hInst, NULL);
         SendMessageW(pData->hBtnClear, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
-        /* Status label */
+        /* Status label with more key hints */
         pData->hLabelStatus = CreateWindowExW(0, L"STATIC",
             L"Zephyr Shell \x6A21\x5F0F  "
             L"Tab=\x8865\x5168  "
             L"\x2191\x2193=\x5386\x53F2  "
-            L"Ctrl+A/E=\x884C\x9996/\x884C\x5C3E",
+            L"Home/End=\x884C\x9996/\x884C\x5C3E",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
-            margin + 70, tbY + 3, 500, 20,
+            margin + 80, tbY + 5, 600, 20,
             hwnd, NULL, hInst, NULL);
         SendMessageW(pData->hLabelStatus, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
