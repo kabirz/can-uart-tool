@@ -51,6 +51,7 @@ typedef struct {
 typedef struct {
     CanManager     *canMgr;
     UartManager    *uartMgr;
+    HWND            hNotifyWnd;       /* 主窗口，用于发送 CAN 连接通知 */
     int             transportMode;   /* TRANSPORT_MODE_CAN or TRANSPORT_MODE_UART */
     int             isConnected;
     int             isUpdating;
@@ -91,6 +92,7 @@ typedef struct {
 typedef struct {
     CanManager  *canMgr;
     UartManager *uartMgr;
+    HWND         hNotifyWnd;   /* 主窗口句柄，用于发送 CAN 连接/断开通知 */
 } TabCanUpgrade_InitParams;
 
 /* ------------------------------------------------------------------ */
@@ -277,8 +279,9 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
 
         /* Recover the manager pointers passed via lpCreateParams */
         TabCanUpgrade_InitParams *init = (TabCanUpgrade_InitParams *)cs->lpCreateParams;
-        pData->canMgr  = init->canMgr;
-        pData->uartMgr = init->uartMgr;
+        pData->canMgr    = init->canMgr;
+        pData->uartMgr   = init->uartMgr;
+        pData->hNotifyWnd = init->hNotifyWnd;
 
         /* Create fonts */
         pData->hFont = CreateFontW(
@@ -518,9 +521,12 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
             if (pData->isConnected) {
                 /* Disconnect */
                 EnableWindow(pData->hBtnConnect, FALSE);
-                if (pData->transportMode == TRANSPORT_MODE_CAN)
+                if (pData->transportMode == TRANSPORT_MODE_CAN) {
                     CanManager_Disconnect(pData->canMgr);
-                else
+                    /* 通知主窗口 CAN 已断开，以便同步 Tab1 */
+                    if (pData->hNotifyWnd)
+                        PostMessage(pData->hNotifyWnd, WM_CAN_DISCONNECTED, 0, 0);
+                } else
                     UartManager_Disconnect(pData->uartMgr);
 
                 pData->isConnected = 0;
@@ -563,6 +569,15 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
                     EnableWindow(pData->hComboBaudrate, FALSE);
                     EnableWindow(pData->hComboUartBaudrate, FALSE);
                     UpdateFlashButtonState(pData);
+
+                    /* 通知主窗口 CAN 已连接，传递通道号给 Tab1 (CAN命令) */
+                    if (pData->transportMode == TRANSPORT_MODE_CAN && pData->hNotifyWnd) {
+                        int cnl_idx = (int)SendMessageW(pData->hComboChannel, CB_GETCURSEL, 0, 0);
+                        if (cnl_idx >= 0 && cnl_idx < pData->channelCount) {
+                            PostMessage(pData->hNotifyWnd, WM_CAN_CONNECTED,
+                                        (WPARAM)pData->channels[cnl_idx], 0);
+                        }
+                    }
                 } else {
                     EnableWindow(pData->hBtnConnect, TRUE);
                     MessageBoxW(hwnd,
@@ -745,7 +760,8 @@ static const wchar_t *TAB_UPGRADE_CLASS = L"TabCanUpgradeClass";
 static int g_classRegistered = 0;
 
 HWND TabCanUpgrade_Create(HWND hParent, HINSTANCE hInst,
-                           CanManager *can_mgr, UartManager *uart_mgr)
+                           CanManager *can_mgr, UartManager *uart_mgr,
+                           HWND hNotifyWnd)
 {
     if (!g_classRegistered) {
         WNDCLASSEXW wc = { 0 };
@@ -761,7 +777,7 @@ HWND TabCanUpgrade_Create(HWND hParent, HINSTANCE hInst,
     }
 
     /* We need to pass both pointers through lpCreateParams */
-    TabCanUpgrade_InitParams init = { can_mgr, uart_mgr };
+    TabCanUpgrade_InitParams init = { can_mgr, uart_mgr, hNotifyWnd };
 
     RECT rcParent;
     GetClientRect(hParent, &rcParent);

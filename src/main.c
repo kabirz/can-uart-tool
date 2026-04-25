@@ -15,7 +15,7 @@
 #include "net_terminal.h"
 
 /* Forward declarations for tab page creation */
-extern HWND TabCanUpgrade_Create(HWND hParent, HINSTANCE hInst, CanManager *can_mgr, UartManager *uart_mgr);
+extern HWND TabCanUpgrade_Create(HWND hParent, HINSTANCE hInst, CanManager *can_mgr, UartManager *uart_mgr, HWND hNotifyWnd);
 extern void TabCanUpgrade_Destroy(HWND hwnd);
 extern HWND TabCanCommand_Create(HWND hParent, HINSTANCE hInst, CanCommand *cmd);
 extern void TabCanCommand_Destroy(HWND hwnd);
@@ -32,13 +32,6 @@ static const wchar_t *g_TabNames[MAX_TABS] = {
     L"CAN 命令",
     L"UART 终端",
     L"网络终端"
-};
-
-static const wchar_t *g_TabPlaceholders[MAX_TABS] = {
-    L"Tab 1: CAN/UART 固件升级页面",
-    L"Tab 2: CAN 命令发送页面",
-    L"Tab 3: UART Shell 终端页面",
-    L"Tab 4: TCP/UDP 网络终端页面"
 };
 
 typedef struct {
@@ -69,8 +62,8 @@ static void CalcWindowRectFromClient(DWORD style, DWORD exStyle, int cx, int cy,
     prc->bottom += 26;
 }
 
-/* Create tab pages: tab 0 uses the real upgrade page, others are placeholders */
-static void CreateTabPages(HWND hTabCtrl, HINSTANCE hInst)
+/* Create tab pages */
+static void CreateTabPages(HWND hTabCtrl, HWND hMainWnd, HINSTANCE hInst)
 {
     RECT rc;
     int i;
@@ -81,7 +74,8 @@ static void CreateTabPages(HWND hTabCtrl, HINSTANCE hInst)
 
     /* Tab 0: CAN/UART Firmware Upgrade (real page) */
     g_App.hTabPages[0] = TabCanUpgrade_Create(hTabCtrl, hInst,
-                                               g_App.canMgr, g_App.uartMgr);
+                                               g_App.canMgr, g_App.uartMgr,
+                                               hMainWnd);
 
     /* Tab 1: CAN Command page */
     g_App.hTabPages[1] = TabCanCommand_Create(hTabCtrl, hInst, g_App.canCmd);
@@ -185,8 +179,8 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
             L"Microsoft YaHei");
 
-        /* Create tab pages (placeholders) */
-        CreateTabPages(g_App.hTabCtrl, hInst);
+        /* Create tab pages */
+        CreateTabPages(g_App.hTabCtrl, hWnd, hInst);
 
         return 0;
     }
@@ -221,6 +215,23 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
             return 0;
         }
         break;
+
+    /* CAN 连接共享：Tab0 通知 Tab1 更新 CAN 通道 */
+    case WM_CAN_CONNECTED:
+        if (g_App.hTabPages[1]) {
+            TabCanCommand_UpdateChannel(g_App.hTabPages[1], (TPCANHandle)wParam);
+            SendMessageW(g_App.hStatusBar, SB_SETTEXTW, 0,
+                         (LPARAM)L"CAN 已连接 - 通道已同步到 CAN 命令页");
+        }
+        return 0;
+
+    case WM_CAN_DISCONNECTED:
+        if (g_App.hTabPages[1]) {
+            TabCanCommand_UpdateChannel(g_App.hTabPages[1], PCAN_NONEBUS);
+            SendMessageW(g_App.hStatusBar, SB_SETTEXTW, 0,
+                         (LPARAM)L"CAN 已断开");
+        }
+        return 0;
 
     case WM_DESTROY:
         /* Destroy tab pages explicitly */

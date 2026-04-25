@@ -71,6 +71,8 @@
 #define WM_CAN_FRAME_RECEIVED           (WM_APP + 3)
 #define WM_NET_DATA_RECEIVED            (WM_APP + 4)
 #define WM_UART_DATA_RECEIVED           (WM_APP + 5)
+#define WM_CAN_CONNECTED                (WM_APP + 6)
+#define WM_CAN_DISCONNECTED             (WM_APP + 7)
 
 // Layout constants
 #define WINDOW_WIDTH                    800

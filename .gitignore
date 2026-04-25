@@ -1,2 +1,7 @@
 build/
 .superpowers/
+*.exe
+*.obj
+*.o
+*.ilk
+*.pdb
