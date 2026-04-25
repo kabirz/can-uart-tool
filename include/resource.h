@@ -13,6 +13,8 @@
 #define IDR_MAINMENU                    202
 #define IDM_FILE_EXIT                   203
 #define IDM_HELP_ABOUT                  204
+#define IDM_FILE_OPEN                   205
+#define IDR_MAINACCEL                   206
 
 // Tab Control
 #define IDC_TAB_CONTROL                 1001

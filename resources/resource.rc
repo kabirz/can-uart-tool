@@ -16,10 +16,17 @@ IDR_MAINMENU MENU
 BEGIN
     POPUP "文件(&F)"
     BEGIN
+        MENUITEM "打开固件(&O)\tCtrl+O",    IDM_FILE_OPEN
+        MENUITEM SEPARATOR
         MENUITEM "退出(&X)",                IDM_FILE_EXIT
     END
     POPUP "帮助(&H)"
     BEGIN
         MENUITEM "关于(&A)",                IDM_HELP_ABOUT
     END
+END
+
+IDR_MAINACCEL ACCELERATORS
+BEGIN
+    "O", IDM_FILE_OPEN, CONTROL, VIRTKEY
 END

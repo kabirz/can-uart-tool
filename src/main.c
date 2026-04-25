@@ -7,6 +7,7 @@
 #include <winsock2.h>
 #include <windows.h>
 #include <commctrl.h>
+#include <commdlg.h>
 #include "resource.h"
 #include "can_manager.h"
 #include "uart_manager.h"
@@ -248,6 +249,26 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 
     case WM_COMMAND:
         switch (LOWORD(wParam)) {
+        case IDM_FILE_OPEN: {
+            /* Open firmware file and set path in Tab1 (CAN Upgrade) */
+            wchar_t fileName[MAX_PATH] = L"";
+            OPENFILENAMEW ofn;
+            memset(&ofn, 0, sizeof(ofn));
+            ofn.lStructSize = sizeof(ofn);
+            ofn.hwndOwner   = hWnd;
+            ofn.lpstrFilter = L"固件文件 (*.bin)\0*.bin\0所有文件 (*.*)\0*.*\0";
+            ofn.lpstrFile   = fileName;
+            ofn.nMaxFile    = MAX_PATH;
+            ofn.Flags       = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+            ofn.lpstrTitle  = L"选择固件文件";
+            if (GetOpenFileNameW(&ofn)) {
+                if (g_App.hTabPages[0]) {
+                    HWND hEdit = GetDlgItem(g_App.hTabPages[0], IDC_EDIT_FIRMWARE);
+                    if (hEdit) SetWindowTextW(hEdit, fileName);
+                }
+            }
+            return 0;
+        }
         case IDM_FILE_EXIT:
             DestroyWindow(hWnd);
             return 0;
@@ -420,10 +441,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     ShowWindow(hWnd, nCmdShow);
     UpdateWindow(hWnd);
 
+    /* Load accelerator table for keyboard shortcuts */
+    HACCEL hAccel = LoadAcceleratorsW(hInstance, MAKEINTRESOURCEW(IDR_MAINACCEL));
+
     /* Message loop */
     while (GetMessageW(&msg, NULL, 0, 0) > 0) {
-        TranslateMessage(&msg);
-        DispatchMessageW(&msg);
+        if (!TranslateAcceleratorW(hWnd, hAccel, &msg)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
     }
 
     return (int)msg.wParam;
