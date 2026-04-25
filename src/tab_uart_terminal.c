@@ -17,6 +17,12 @@
 /* ------------------------------------------------------------------ */
 /*  Per-window instance data (stored via GWLP_USERDATA)                */
 /* ------------------------------------------------------------------ */
+#define UART_RECV_BUF_SIZE 16384
+
+#ifndef WM_UART_FLUSH
+#define WM_UART_FLUSH (WM_APP + 20)
+#endif
+
 typedef struct {
     UartTerminal *uartTerm;
     TerminalCtx  *termCtx;
@@ -38,6 +44,11 @@ typedef struct {
     HFONT hFontMono;
 
     int isConnected;
+
+    /* Receive batching buffer */
+    char recv_buf[UART_RECV_BUF_SIZE];
+    int recv_buf_len;
+    int flush_pending;
 } TAB_UART_DATA;
 
 /* ------------------------------------------------------------------ */
@@ -152,11 +163,8 @@ static LRESULT CALLBACK RichEdit_SubclassProc(HWND hwnd, UINT uMsg,
         break;
     }
     case WM_CHAR: {
-        if (pData->termCtx->is_shell_mode) {
-            Terminal_HandleChar(pData->termCtx, wParam);
-            return 0; /* suppress default processing in shell mode */
-        }
-        break;
+        Terminal_HandleChar(pData->termCtx, wParam);
+        return 0;
     }
     case WM_DESTROY:
         /* Remove subclass on destroy */
@@ -271,25 +279,26 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
             WS_EX_CLIENTEDGE,
             MSFTEDIT_CLASS,
             L"",
-            WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL |
-            ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | ES_AUTOHSCROLL,
+            WS_CHILD | WS_VISIBLE | WS_VSCROLL |
+            ES_MULTILINE | ES_AUTOVSCROLL,
             termX, termY, termW, termH,
             hwnd, (HMENU)IDC_EDIT_UART_TERMINAL, hInst, NULL);
 
         /* Dark theme for RichEdit */
         if (pData->hEditTerminal) {
-            SendMessageW(pData->hEditTerminal, EM_SETBKGNDCOLOR, 0, RGB(0x0C, 0x0C, 0x0C));
+            SendMessageW(pData->hEditTerminal, EM_SETBKGNDCOLOR, 0, RGB(0x28, 0x2A, 0x36));
+            SendMessageW(pData->hEditTerminal, EM_SETTARGETDEVICE, 0, 0);  /* Word wrap */
 
             CHARFORMATW cf = { 0 };
             cf.cbSize = sizeof(cf);
             cf.dwMask = CFM_COLOR | CFM_FACE | CFM_SIZE;
             cf.crTextColor = RGB(0xCC, 0xCC, 0xCC);
-            cf.yHeight = 400; /* 20pt in twips */
+            cf.yHeight = 260; /* 13pt in twips */
             wcscpy(cf.szFaceName, L"Consolas");
             SendMessageW(pData->hEditTerminal, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
 
-            /* Create TerminalCtx in shell mode */
-            pData->termCtx = Terminal_Create(pData->hEditTerminal, 1);
+            /* Create TerminalCtx in raw passthrough mode */
+            pData->termCtx = Terminal_Create(pData->hEditTerminal, 0);
             if (pData->termCtx) {
                 Terminal_SetSendFunc(pData->termCtx, UartSendFunc, pData);
             }
@@ -388,16 +397,34 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
     case WM_UART_DATA_RECEIVED: {
         UartRecvMsg *msg = (UartRecvMsg *)lParam;
         if (msg && pData->termCtx) {
-            /* Null-terminate for Terminal_AppendText (expects UTF-8 string) */
-            char *data = (char *)malloc(msg->len + 1);
-            if (data) {
-                memcpy(data, msg->data, msg->len);
-                data[msg->len] = '\0';
-                Terminal_AppendText(pData->termCtx, data);
-                free(data);
+            int space = UART_RECV_BUF_SIZE - pData->recv_buf_len;
+            int copy = msg->len < space ? msg->len : space;
+            if (copy > 0) {
+                memcpy(pData->recv_buf + pData->recv_buf_len, msg->data, copy);
+                pData->recv_buf_len += copy;
+            }
+            if (!pData->flush_pending) {
+                pData->flush_pending = 1;
+                SetTimer(hwnd, 1, 16, NULL);
             }
         }
         free(msg);
+        return 0;
+    }
+
+    /* ---- Timer: flush batched receive data to RichEdit ---- */
+    case WM_TIMER: {
+        if (wParam != 1) break;
+        KillTimer(hwnd, 1);
+        pData->flush_pending = 0;
+        if (pData->recv_buf_len > 0 && pData->termCtx) {
+            pData->recv_buf[pData->recv_buf_len] = '\0';
+            SendMessageW(pData->hEditTerminal, WM_SETREDRAW, FALSE, 0);
+            Terminal_AppendText(pData->termCtx, pData->recv_buf);
+            SendMessageW(pData->hEditTerminal, WM_SETREDRAW, TRUE, 0);
+            InvalidateRect(pData->hEditTerminal, NULL, FALSE);
+            pData->recv_buf_len = 0;
+        }
         return 0;
     }
 

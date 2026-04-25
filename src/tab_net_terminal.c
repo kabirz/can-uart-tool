@@ -295,18 +295,19 @@ static LRESULT CALLBACK TabNetTerminal_WndProc(HWND hwnd, UINT uMsg,
 
         pData->hEditTerminal = CreateWindowExW(WS_EX_CLIENTEDGE,
             MSFTEDIT_CLASS, L"",
-            WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL |
-            ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
+            WS_CHILD | WS_VISIBLE | WS_VSCROLL |
+            ES_MULTILINE | ES_AUTOVSCROLL,
             termX, termY, termW, termH,
             hwnd, (HMENU)IDC_EDIT_NET_TERMINAL, hInst, NULL);
 
         /* Dark theme for RichEdit */
-        SendMessageW(pData->hEditTerminal, EM_SETBKGNDCOLOR, 0, RGB(0x0C, 0x0C, 0x0C));
+        SendMessageW(pData->hEditTerminal, EM_SETBKGNDCOLOR, 0, RGB(0x28, 0x2A, 0x36));
+        SendMessageW(pData->hEditTerminal, EM_SETTARGETDEVICE, 0, 0);  /* Word wrap */
         CHARFORMATW cf = {0};
         cf.cbSize = sizeof(cf);
         cf.dwMask = CFM_COLOR | CFM_FACE | CFM_SIZE;
         cf.crTextColor = RGB(0xCC, 0xCC, 0xCC);
-        cf.yHeight = 400;  /* 20pt = 400 twips */
+        cf.yHeight = 260;  /* 13pt in twips */
         wcscpy(cf.szFaceName, L"Consolas");
         SendMessageW(pData->hEditTerminal, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
         SendMessageW(pData->hEditTerminal, EM_SETEVENTMASK, 0, ENM_KEYEVENTS);
