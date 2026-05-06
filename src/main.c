@@ -276,15 +276,15 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
             return 0;
         case IDM_HELP_ABOUT:
             MessageBoxW(hWnd,
-                        L"CAN/UART 工具 v0.1.1\n"
+                        L"CAN/UART 工具 v0.1.2\n"
                         L"基于 Win32 API 的 CAN/UART 调试工具\n\n"
                         L"功能：\n"
                         L"  - CAN/UART 固件升级\n"
                         L"  - CAN 帧收发与监控\n"
                         L"  - UART Shell 终端（ANSI 颜色）\n"
                         L"  - TCP/UDP 网络终端\n\n"
-                        L"依赖：PCAN-Basic SDK\n"
-                        L"编译：CMake + Visual Studio 2026",
+                        L"依赖：PCAN-Basic SDK / IXXAT VCI SDK（运行时动态加载）\n"
+                         L"编译：CMake + Visual Studio 2026",
                         L"关于 CAN/UART 工具",
                         MB_OK | MB_ICONINFORMATION);
             return 0;
