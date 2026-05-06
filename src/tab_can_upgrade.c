@@ -23,8 +23,8 @@
 
 /* CAN baud rate table */
 static const int BAUD_RATES[] = {
-    PCAN_BAUD_10K, PCAN_BAUD_20K, PCAN_BAUD_50K, PCAN_BAUD_100K,
-    PCAN_BAUD_125K, PCAN_BAUD_250K, PCAN_BAUD_500K, PCAN_BAUD_1M
+    CAN_HAL_BAUD_10K, CAN_HAL_BAUD_20K, CAN_HAL_BAUD_50K, CAN_HAL_BAUD_100K,
+    CAN_HAL_BAUD_125K, CAN_HAL_BAUD_250K, CAN_HAL_BAUD_500K, CAN_HAL_BAUD_1M
 };
 static const wchar_t *baudNames[] = {
     L"10K", L"20K", L"50K", L"100K",
@@ -58,7 +58,7 @@ typedef struct {
     HWND            hUpdatingDialog;
 
     /* Device lists */
-    TPCANHandle     channels[MAX_DEVICES];
+    int             channels[MAX_DEVICES];
     int             channelCount;
     SerialPortInfo  serialPorts[MAX_SERIAL_PORTS];
     int             serialPortCount;
@@ -66,6 +66,7 @@ typedef struct {
     /* Child control handles (set during WM_CREATE) */
     HWND hBtnCan;
     HWND hBtnUart;
+    HWND hComboAdapter;
     HWND hComboChannel;
     HWND hComboBaudrate;
     HWND hComboUartBaudrate;
@@ -168,14 +169,18 @@ static void GetDeviceList(TAB_UPGRADE_DATA *pData)
         CanManager_SetCallback(pData->canMgr, LogCallback);
         pData->channelCount = CanManager_DetectDevice(pData->canMgr, pData->channels, MAX_DEVICES);
 
+        const char *adapterName = "";
+        CanHal *hal = CanManager_GetHal(pData->canMgr);
+        if (hal) adapterName = CanHal_GetName(hal);
+
         for (int i = 0; i < pData->channelCount; i++) {
-            wsprintfW(buf, L"PCAN-USB: %xh", pData->channels[i]);
+            wsprintfW(buf, L"%S: %xh", adapterName, pData->channels[i]);
             SendMessageW(hChannel, CB_ADDSTRING, 0, (LPARAM)buf);
         }
         /* Append virtual CAN option */
         if (pData->channelCount < MAX_DEVICES) {
             SendMessageW(hChannel, CB_ADDSTRING, 0, (LPARAM)L"虚拟 CAN (测试模式)");
-            pData->channels[pData->channelCount] = VIRTUAL_CAN_CHANNEL;
+            pData->channels[pData->channelCount] = CAN_HAL_VIRTUAL_CHANNEL;
             pData->channelCount++;
         }
     } else {
@@ -198,11 +203,13 @@ static void UpdateTransportModeUI(TAB_UPGRADE_DATA *pData)
     if (pData->transportMode == TRANSPORT_MODE_CAN) {
         ShowWindow(pData->hComboBaudrate, SW_SHOW);
         ShowWindow(pData->hComboUartBaudrate, SW_HIDE);
+        ShowWindow(pData->hComboAdapter, SW_SHOW);
         SendMessageW(pData->hBtnCan, BM_SETCHECK, BST_CHECKED, 0);
         SendMessageW(pData->hBtnUart, BM_SETCHECK, BST_UNCHECKED, 0);
     } else {
         ShowWindow(pData->hComboBaudrate, SW_HIDE);
         ShowWindow(pData->hComboUartBaudrate, SW_SHOW);
+        ShowWindow(pData->hComboAdapter, SW_HIDE);
         SendMessageW(pData->hBtnCan, BM_SETCHECK, BST_UNCHECKED, 0);
         SendMessageW(pData->hBtnUart, BM_SETCHECK, BST_CHECKED, 0);
     }
@@ -302,7 +309,7 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
 
         /* ========== Group 1: Connection Settings (left column) ========== */
         int grp1X = margin, grp1Y = margin;
-        int grp1W = 630, grp1H = 198;
+        int grp1W = 630, grp1H = 236;
         CreateWindowExW(0, L"BUTTON", L"连接设置",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             grp1X, grp1Y, grp1W, grp1H, hwnd, NULL, hInst, NULL);
@@ -320,6 +327,17 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
             WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
             cx + lblW + 8 + 78, cy, 80, CTRL_H, hwnd, (HMENU)0x9002, hInst, NULL);
         SendMessageW(pData->hBtnUart, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+        cy += lineH;
+
+        /* Row 1.5: Adapter type selector (only shown for CAN mode) */
+        CreateLabel(hwnd, hInst, -1, cx, cy + 3, lblW, CTRL_H, L"适配器:", pData->hFont);
+        pData->hComboAdapter = CreateWindowExW(0, L"COMBOBOX", L"",
+            WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
+            cx + lblW + 8, cy, 240, 200, hwnd, (HMENU)IDC_COMBO_ADAPTER, hInst, NULL);
+        SendMessageW(pData->hComboAdapter, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+        SendMessageW(pData->hComboAdapter, CB_ADDSTRING, 0, (LPARAM)L"PEAK PCAN-USB");
+        SendMessageW(pData->hComboAdapter, CB_ADDSTRING, 0, (LPARAM)L"IXXAT USB-to-CAN");
+        SendMessageW(pData->hComboAdapter, CB_SETCURSEL, 0, 0);
         cy += lineH;
 
         /* Row 2: Device label + Channel ComboBox + Baud label + Baud ComboBox */
@@ -524,6 +542,29 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
             GetDeviceList(pData);
             return 0;
 
+        case IDC_COMBO_ADAPTER:
+            if (HIWORD(wParam) == CBN_SELCHANGE) {
+                if (pData->isConnected) {
+                    MessageBoxW(hwnd, L"请先断开当前连接", L"提示",
+                               MB_OK | MB_ICONWARNING);
+                    return 0;
+                }
+                int adapter_idx = (int)SendMessageW(pData->hComboAdapter, CB_GETCURSEL, 0, 0);
+                CanHal *newHal = CanHal_Create(adapter_idx);
+                if (newHal) {
+                    CanManager *newMgr = CanManager_Create(newHal);
+                    if (newMgr) {
+                        CanManager_Destroy(pData->canMgr);
+                        pData->canMgr = newMgr;
+                        g_ActiveDataForLog = pData;
+                        GetDeviceList(pData);
+                    } else {
+                        CanHal_Destroy(newHal);
+                    }
+                }
+            }
+            return 0;
+
         case IDC_BUTTON_CONNECT: {
             if (pData->isUpdating) return 0;
 
@@ -558,7 +599,7 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
                     int cnl_idx = SendMessageW(pData->hComboChannel, CB_GETCURSEL, 0, 0);
                     int baud_idx = SendMessageW(pData->hComboBaudrate, CB_GETCURSEL, 0, 0);
                     if (cnl_idx >= 0 && cnl_idx < pData->channelCount && baud_idx >= 0)
-                        res = CanManager_Connect(pData->canMgr, pData->channels[cnl_idx], BAUD_RATES[baud_idx]);
+                        res = CanManager_Connect(pData->canMgr, pData->channels[cnl_idx], baud_idx);
                 } else {
                     int port_idx = SendMessageW(pData->hComboChannel, CB_GETCURSEL, 0, 0);
                     int baud_idx = SendMessageW(pData->hComboUartBaudrate, CB_GETCURSEL, 0, 0);

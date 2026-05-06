@@ -3,30 +3,31 @@
 #include <stdlib.h>
 #include <string.h>
 
-// 内部结构定义
 struct CanManager {
     CRITICAL_SECTION criticalSection;
-    TPCANHandle channel;
+    CanHal *hal;
+    int channel;
     msgCallback msgCallback;
     progressCallback progressCallback;
     int initialized;
+    int virtualMode;
 };
 
-// 创建 CAN 管理器
-CanManager* CanManager_Create(void) {
+CanManager* CanManager_Create(CanHal *hal) {
     CanManager* mgr = (CanManager*)malloc(sizeof(CanManager));
     if (!mgr) return NULL;
 
     InitializeCriticalSection(&mgr->criticalSection);
-    mgr->channel = PCAN_NONEBUS;
+    mgr->hal = hal;
+    mgr->channel = CAN_HAL_INVALID_HANDLE;
     mgr->msgCallback = NULL;
     mgr->progressCallback = NULL;
     mgr->initialized = 1;
+    mgr->virtualMode = 0;
 
     return mgr;
 }
 
-// 销毁 CAN 管理器
 void CanManager_Destroy(CanManager* mgr) {
     if (!mgr) return;
     if (mgr->initialized) {
@@ -35,131 +36,135 @@ void CanManager_Destroy(CanManager* mgr) {
     free(mgr);
 }
 
-// 设置日志回调函数
 void CanManager_SetCallback(CanManager* mgr, msgCallback msg_call) {
     if (mgr) {
         mgr->msgCallback = msg_call;
     }
 }
 
-// 设置进度回调函数
 void CanManager_SetProgressCallback(CanManager* mgr, progressCallback progress_call) {
     if (mgr) {
         mgr->progressCallback = progress_call;
     }
 }
 
-// 添加日志
 static void appendLog(CanManager* mgr, const char* msg) {
     if (mgr && mgr->msgCallback) {
         mgr->msgCallback(msg);
     }
 }
 
-// 连接 CAN 设备
-int CanManager_Connect(CanManager* mgr, TPCANHandle channel, TPCANBaudrate baudrate) {
+int CanManager_IsVirtualChannel(int channel) {
+    return channel == CAN_HAL_VIRTUAL_CHANNEL;
+}
+
+CanHal *CanManager_GetHal(CanManager* mgr) {
+    return mgr ? mgr->hal : NULL;
+}
+
+int CanManager_Connect(CanManager* mgr, int channel, int baud_index) {
     if (!mgr || !mgr->initialized) return 0;
 
     EnterCriticalSection(&mgr->criticalSection);
 
-    if (mgr->channel != PCAN_NONEBUS) {
+    if (mgr->channel != CAN_HAL_INVALID_HANDLE) {
         LeaveCriticalSection(&mgr->criticalSection);
         appendLog(mgr, "CAN 连接已存在, 请勿重复连接");
         return 1;
     }
 
-    // 检查是否为虚拟 CAN
-    if (channel == VIRTUAL_CAN_CHANNEL) {
+    if (channel == CAN_HAL_VIRTUAL_CHANNEL) {
         mgr->channel = channel;
+        mgr->virtualMode = 1;
         LeaveCriticalSection(&mgr->criticalSection);
         appendLog(mgr, "虚拟 CAN 连接成功 (测试模式)");
         return 1;
     }
 
-    TPCANStatus status = CAN_Initialize(channel, baudrate, 0, 0, 0);
-    if (status != PCAN_ERROR_OK) {
+    if (!mgr->hal) {
+        LeaveCriticalSection(&mgr->criticalSection);
+        appendLog(mgr, "CAN HAL 未初始化");
+        return 0;
+    }
+
+    int result = CanHal_Connect(mgr->hal, channel, baud_index);
+    if (result) {
+        mgr->channel = channel;
+        mgr->virtualMode = 0;
+        LeaveCriticalSection(&mgr->criticalSection);
+        char logMsg[64];
+        sprintf(logMsg, "CAN(id=%xh) 连接成功 (%s)", channel, CanHal_GetName(mgr->hal));
+        appendLog(mgr, logMsg);
+        CanHal_SetFilter(mgr->hal, PLATFORM_TX, PLATFORM_TX);
+        return 1;
+    } else {
         LeaveCriticalSection(&mgr->criticalSection);
         appendLog(mgr, "CAN 初始化失败");
         return 0;
-    } else {
-        mgr->channel = channel;
-        LeaveCriticalSection(&mgr->criticalSection);
-        char logMsg[32];
-        sprintf(logMsg, "CAN(id=%xh) 连接成功", channel);
-        appendLog(mgr, logMsg);
-        CAN_FilterMessages(mgr->channel, PLATFORM_TX, PLATFORM_TX, PCAN_MODE_STANDARD);
-        return 1;
     }
 }
 
-// 断开 CAN 连接
 void CanManager_Disconnect(CanManager* mgr) {
     if (!mgr || !mgr->initialized) return;
 
     EnterCriticalSection(&mgr->criticalSection);
 
     char logMsg[64];
-    if (mgr->channel == VIRTUAL_CAN_CHANNEL) {
+    if (mgr->virtualMode) {
         sprintf(logMsg, "虚拟 CAN 连接已断开");
     } else {
         sprintf(logMsg, "CAN(id=%xh) 连接已断开", mgr->channel);
-        CAN_Uninitialize(mgr->channel);
+        if (mgr->hal)
+            CanHal_Disconnect(mgr->hal);
     }
-    mgr->channel = PCAN_NONEBUS;
+    mgr->channel = CAN_HAL_INVALID_HANDLE;
+    mgr->virtualMode = 0;
     LeaveCriticalSection(&mgr->criticalSection);
     appendLog(mgr, logMsg);
 }
 
-// 等待 CAN 响应
 static int CAN_WaitForResponse(CanManager* mgr, uint32_t* code, uint32_t* param, int timeoutMs) {
-    TPCANMsg msg;
-    TPCANTimestamp timestamp;
+    CanHalFrame frame;
     DWORD startTime = GetTickCount();
 
     while ((int)(GetTickCount() - startTime) < timeoutMs) {
-        TPCANStatus status = CAN_Read(mgr->channel, &msg, &timestamp);
-        if (status == PCAN_ERROR_OK && msg.ID == PLATFORM_TX) {
-            can_frame_t* frame = (can_frame_t*)msg.DATA;
-            *code = frame->code;
-            *param = frame->val;
+        int result = CanHal_Read(mgr->hal, &frame, 10);
+        if (result && frame.id == PLATFORM_TX) {
+            can_frame_t* f = (can_frame_t*)frame.data;
+            *code = f->code;
+            *param = f->val;
             return 1;
-        } else if (status == PCAN_ERROR_QRCVEMPTY) {
-            Sleep(1);
         }
     }
     return 0;
 }
 
-// 获取固件版本
 uint32_t CanManager_GetFirmwareVersion(CanManager* mgr) {
     if (!mgr || !mgr->initialized) return 0;
 
     EnterCriticalSection(&mgr->criticalSection);
 
-    if (mgr->channel == PCAN_NONEBUS) {
+    if (mgr->channel == CAN_HAL_INVALID_HANDLE) {
         LeaveCriticalSection(&mgr->criticalSection);
         appendLog(mgr, "CAN已断开连接, 请重新连接");
         return 0;
     }
 
-    // 虚拟 CAN 模式：返回模拟版本
-    if (mgr->channel == VIRTUAL_CAN_CHANNEL) {
+    if (mgr->virtualMode) {
         appendLog(mgr, "固件版本: v1.0.0 (虚拟 CAN)");
         LeaveCriticalSection(&mgr->criticalSection);
-        return 0x01000000;  // v1.0.0
+        return 0x01000000;
     }
 
-    TPCANMsg msg;
-    msg.ID = PLATFORM_RX;
-    msg.MSGTYPE = PCAN_MODE_STANDARD;
-    msg.LEN = 8;
-    memset(msg.DATA, 0, 8);
+    CanHalFrame frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.id = PLATFORM_RX;
+    frame.dlc = 8;
+    frame.flags = CAN_HAL_FLAG_STANDARD;
+    can_frame_t* f = (can_frame_t*)frame.data;
+    f->code = BOARD_VERSION;
 
-    can_frame_t* frame = (can_frame_t*)msg.DATA;
-    frame->code = BOARD_VERSION;
-
-    TPCANStatus status = CAN_Write(mgr->channel, &msg);
-    if (status != PCAN_ERROR_OK) {
+    if (!CanHal_Write(mgr->hal, &frame)) {
         LeaveCriticalSection(&mgr->criticalSection);
         appendLog(mgr, "CAN 发送失败");
         return 0;
@@ -186,38 +191,35 @@ uint32_t CanManager_GetFirmwareVersion(CanManager* mgr) {
     return 0;
 }
 
-// 重启板卡
 int CanManager_BoardReboot(CanManager* mgr) {
     if (!mgr || !mgr->initialized) return 0;
 
     EnterCriticalSection(&mgr->criticalSection);
 
-    if (mgr->channel == PCAN_NONEBUS) {
+    if (mgr->channel == CAN_HAL_INVALID_HANDLE) {
         LeaveCriticalSection(&mgr->criticalSection);
         appendLog(mgr, "CAN已断开连接, 请重新连接");
         return 0;
     }
 
-    // 虚拟 CAN 模式：模拟重启
-    if (mgr->channel == VIRTUAL_CAN_CHANNEL) {
+    if (mgr->virtualMode) {
         appendLog(mgr, "虚拟板卡重启成功");
         LeaveCriticalSection(&mgr->criticalSection);
         return 1;
     }
 
-    TPCANMsg msg;
-    msg.ID = PLATFORM_RX;
-    msg.MSGTYPE = PCAN_MODE_STANDARD;
-    msg.LEN = 8;
-    memset(msg.DATA, 0, 8);
+    CanHalFrame frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.id = PLATFORM_RX;
+    frame.dlc = 8;
+    frame.flags = CAN_HAL_FLAG_STANDARD;
+    can_frame_t* f = (can_frame_t*)frame.data;
+    f->code = BOARD_REBOOT;
 
-    can_frame_t* frame = (can_frame_t*)msg.DATA;
-    frame->code = BOARD_REBOOT;
-
-    TPCANStatus status = CAN_Write(mgr->channel, &msg);
+    int result = CanHal_Write(mgr->hal, &frame);
     LeaveCriticalSection(&mgr->criticalSection);
 
-    if (status != PCAN_ERROR_OK) {
+    if (!result) {
         appendLog(mgr, "CAN 发送失败");
         return 0;
     }
@@ -225,12 +227,10 @@ int CanManager_BoardReboot(CanManager* mgr) {
     return 1;
 }
 
-// 虚拟 CAN 固件升级
 static int VirtualCAN_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName) {
     char logMsg[256];
     appendLog(mgr, "虚拟 CAN 模式：模拟固件升级...");
 
-    // 打开源文件
     HANDLE hSrcFile = CreateFileW(fileName, GENERIC_READ, FILE_SHARE_READ, NULL,
                                   OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hSrcFile == INVALID_HANDLE_VALUE) {
@@ -238,7 +238,6 @@ static int VirtualCAN_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName) 
         return 0;
     }
 
-    // 创建输出文件
     char outputFileName[256];
     GetModuleFileNameA(NULL, outputFileName, 256);
     char* lastSlash = strrchr(outputFileName, '\\');
@@ -260,11 +259,9 @@ static int VirtualCAN_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName) 
     appendLog(mgr, logMsg);
     appendLog(mgr, "输出文件: virtual_firmware.bin");
 
-    // 模拟 Flash 擦除
     Sleep(500);
     appendLog(mgr, "Flash 擦除完成");
 
-    // 复制文件并模拟进度
     BYTE buffer[4096];
     DWORD bytesRead, bytesWritten;
     DWORD totalBytes = 0;
@@ -273,13 +270,11 @@ static int VirtualCAN_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName) 
         WriteFile(hDstFile, buffer, bytesRead, &bytesWritten, NULL);
         totalBytes += bytesRead;
 
-        // 每 64 字节更新一次进度
         if (totalBytes % 64 == 0 || totalBytes == fileSize) {
             if (mgr->progressCallback) {
                 int percent = (int)(totalBytes * 100 / fileSize);
                 mgr->progressCallback(percent);
             }
-            // 模拟一些延迟
             if (totalBytes % 1024 == 0) {
                 Sleep(10);
             }
@@ -300,14 +295,12 @@ static int VirtualCAN_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName) 
     return 1;
 }
 
-// PCAN 固件升级
-static int PCAN_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName, int testMode) {
+static int HAL_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName, int testMode) {
     char logMsg[256];
 
     HANDLE hFile = CreateFileW(fileName, GENERIC_READ, FILE_SHARE_READ, NULL,
                                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) {
-        // 将宽字符文件名转换为 UTF-8 用于日志输出
         WideCharToMultiByte(CP_UTF8, 0, fileName, -1, logMsg + 20, 200, NULL, NULL);
         sprintf(logMsg, "无法打开文件: %s", logMsg + 20);
         appendLog(mgr, logMsg);
@@ -318,18 +311,17 @@ static int PCAN_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName, int te
     sprintf(logMsg, "开始固件升级, 固件大小: %u 字节", fileSize);
     appendLog(mgr, logMsg);
 
-    TPCANMsg msg;
-    msg.ID = PLATFORM_RX;
-    msg.MSGTYPE = PCAN_MODE_STANDARD;
-    msg.LEN = 8;
-    memset(msg.DATA, 0, 8);
+    CanHalFrame frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.id = PLATFORM_RX;
+    frame.dlc = 8;
+    frame.flags = CAN_HAL_FLAG_STANDARD;
 
-    can_frame_t* frame = (can_frame_t*)msg.DATA;
-    frame->code = BOARD_START_UPDATE;
-    frame->val = fileSize;
+    can_frame_t* f = (can_frame_t*)frame.data;
+    f->code = BOARD_START_UPDATE;
+    f->val = fileSize;
 
-    TPCANStatus status = CAN_Write(mgr->channel, &msg);
-    if (status != PCAN_ERROR_OK) {
+    if (!CanHal_Write(mgr->hal, &frame)) {
         CloseHandle(hFile);
         appendLog(mgr, "发送固件大小失败");
         return 0;
@@ -352,10 +344,10 @@ static int PCAN_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName, int te
     DWORD bytesSent = 0;
     DWORD bytesRead;
 
-    msg.ID = FW_DATA_RX;
-    while (ReadFile(hFile, msg.DATA, 8, &bytesRead, NULL) && bytesRead > 0) {
-        msg.LEN = bytesRead;
-        if (CAN_Write(mgr->channel, &msg) != PCAN_ERROR_OK) {
+    frame.id = FW_DATA_RX;
+    while (ReadFile(hFile, frame.data, 8, &bytesRead, NULL) && bytesRead > 0) {
+        frame.dlc = (uint8_t)bytesRead;
+        if (!CanHal_Write(mgr->hal, &frame)) {
             CloseHandle(hFile);
             appendLog(mgr, "发送文件数据失败");
             return 0;
@@ -364,7 +356,6 @@ static int PCAN_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName, int te
         bytesSent += bytesRead;
 
         if (bytesSent % 64 == 0 || bytesSent == fileSize) {
-            // 更新进度
             if (mgr->progressCallback) {
                 int percent = (int)(bytesSent * 100 / fileSize);
                 mgr->progressCallback(percent);
@@ -388,19 +379,19 @@ static int PCAN_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName, int te
 
     CloseHandle(hFile);
 
-    // 设置进度为 100%
     if (mgr->progressCallback) {
         mgr->progressCallback(100);
     }
 
-    msg.ID = PLATFORM_RX;
-    msg.LEN = 8;
-    memset(msg.DATA, 0, 8);
-    frame = (can_frame_t*)msg.DATA;
-    frame->code = BOARD_CONFIRM;
-    frame->val = testMode ? 0 : 1;
+    frame.id = PLATFORM_RX;
+    frame.dlc = 8;
+    frame.flags = CAN_HAL_FLAG_STANDARD;
+    memset(frame.data, 0, 8);
+    f = (can_frame_t*)frame.data;
+    f->code = BOARD_CONFIRM;
+    f->val = testMode ? 0 : 1;
 
-    if (CAN_Write(mgr->channel, &msg) != PCAN_ERROR_OK) {
+    if (!CanHal_Write(mgr->hal, &frame)) {
         appendLog(mgr, "固件发送确认失败!");
         return 0;
     }
@@ -411,7 +402,6 @@ static int PCAN_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName, int te
     }
 
     if (code == FW_CODE_CONFIRM && offset == 0x55AA55AA) {
-        // 将宽字符文件名转换为 UTF-8 用于日志输出
         WideCharToMultiByte(CP_UTF8, 0, fileName, -1, logMsg + 20, 200, NULL, NULL);
         sprintf(logMsg, "文件 %s 上传完成. 点击重启，板卡将在45-60秒内完成重启", logMsg + 20);
         appendLog(mgr, logMsg);
@@ -423,13 +413,12 @@ static int PCAN_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName, int te
     return 0;
 }
 
-// 固件升级（主调度函数）
 int CanManager_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName, int testMode) {
     if (!mgr || !mgr->initialized) return 0;
 
     EnterCriticalSection(&mgr->criticalSection);
 
-    if (mgr->channel == PCAN_NONEBUS) {
+    if (mgr->channel == CAN_HAL_INVALID_HANDLE) {
         LeaveCriticalSection(&mgr->criticalSection);
         appendLog(mgr, "CAN已断开连接, 请重新连接");
         return 0;
@@ -437,27 +426,15 @@ int CanManager_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName, int tes
 
     LeaveCriticalSection(&mgr->criticalSection);
 
-    // 根据通道类型选择升级方式
-    if (mgr->channel == VIRTUAL_CAN_CHANNEL) {
+    if (mgr->virtualMode) {
         return VirtualCAN_FirmwareUpgrade(mgr, fileName);
     } else {
-        return PCAN_FirmwareUpgrade(mgr, fileName, testMode);
+        return HAL_FirmwareUpgrade(mgr, fileName, testMode);
     }
 }
 
-// 检测设备
-int CanManager_DetectDevice(CanManager* mgr, TPCANHandle* channels, int maxCount) {
-    int count = 0;
-    char msg[64];
-    for (int i = 0; i < 16 && count < maxCount; i++) {
-        TPCANHandle channel = PCAN_NONEBUS;
-        sprintf(msg, "devicetype=pcan_usb,controllernumber=%d", i);
-        TPCANStatus result = CAN_LookUpChannel(msg, &channel);
-        if (result == PCAN_ERROR_OK && channel != PCAN_NONEBUS) {
-            channels[count++] = channel;
-        }
-    }
-    sprintf(msg, "查询到 %d 个可用CAN设备", count);
-    appendLog(mgr, msg);
-    return count;
+int CanManager_DetectDevice(CanManager* mgr, int* channels, int maxCount) {
+    if (!mgr || !mgr->hal) return 0;
+    CanHal_SetLogCallback(mgr->hal, mgr->msgCallback);
+    return CanHal_DetectDevices(mgr->hal, channels, maxCount);
 }

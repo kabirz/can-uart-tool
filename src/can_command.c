@@ -2,9 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* ------------------------------------------------------------------ */
-/*  Default quick commands                                             */
-/* ------------------------------------------------------------------ */
 static const CanQuickCommand g_defaultCommands[] = {
     { 0x101, {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}, 8, 0, 0, "启动升级" },
     { 0x101, {0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00}, 8, 0, 0, "确认" },
@@ -14,59 +11,48 @@ static const CanQuickCommand g_defaultCommands[] = {
 static const int g_defaultCommandCount =
     sizeof(g_defaultCommands) / sizeof(g_defaultCommands[0]);
 
-/* ------------------------------------------------------------------ */
-/*  Internal structure                                                 */
-/* ------------------------------------------------------------------ */
 struct CanCommand {
-    TPCANHandle      channel;
-    CanFrameCallback frameCallback;
-    void*            frameCallbackCtx;
-    HANDLE           hMonitorThread;
-    volatile int     monitorRunning;
-    CanQuickCommand  quickCommands[MAX_QUICK_COMMANDS];
-    int              quickCommandCount;
+    CanHal           *hal;
+    int               channel;
+    CanFrameCallback  frameCallback;
+    void*             frameCallbackCtx;
+    HANDLE            hMonitorThread;
+    volatile int      monitorRunning;
+    CanQuickCommand   quickCommands[MAX_QUICK_COMMANDS];
+    int               quickCommandCount;
 };
 
-/* ------------------------------------------------------------------ */
-/*  Monitor thread                                                     */
-/* ------------------------------------------------------------------ */
 static DWORD WINAPI MonitorThread(LPVOID param)
 {
     CanCommand* cmd = (CanCommand*)param;
-    TPCANMsg      msg;
-    TPCANTimestamp ts;
+    CanHalFrame frame;
 
     while (cmd->monitorRunning) {
-        TPCANStatus status = CAN_Read(cmd->channel, &msg, &ts);
-        if (status == PCAN_ERROR_OK) {
+        int result = CanHal_Read(cmd->hal, &frame, 10);
+        if (result) {
             if (cmd->frameCallback) {
-                cmd->frameCallback(msg.ID, msg.DATA, msg.LEN, 0,
+                cmd->frameCallback(frame.id, frame.data, frame.dlc, 0,
                                    cmd->frameCallbackCtx);
             }
-        } else if (status == PCAN_ERROR_QRCVEMPTY) {
-            Sleep(1);
         } else {
-            Sleep(10);
+            Sleep(1);
         }
     }
     return 0;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Create / Destroy                                                   */
-/* ------------------------------------------------------------------ */
-CanCommand* CanCommand_Create(TPCANHandle channel)
+CanCommand* CanCommand_Create(CanHal *hal)
 {
     CanCommand* cmd = (CanCommand*)calloc(1, sizeof(CanCommand));
     if (!cmd) return NULL;
 
-    cmd->channel          = channel;
+    cmd->hal              = hal;
+    cmd->channel          = CAN_HAL_INVALID_HANDLE;
     cmd->frameCallback    = NULL;
     cmd->frameCallbackCtx = NULL;
     cmd->hMonitorThread   = NULL;
     cmd->monitorRunning   = 0;
 
-    /* Copy default quick commands */
     CanCommand_SetQuickCommands(cmd, g_defaultCommands, g_defaultCommandCount);
 
     return cmd;
@@ -79,47 +65,37 @@ void CanCommand_Destroy(CanCommand* cmd)
     free(cmd);
 }
 
-/* ------------------------------------------------------------------ */
-/*  Channel management                                                 */
-/* ------------------------------------------------------------------ */
-void CanCommand_SetChannel(CanCommand* cmd, TPCANHandle channel)
+void CanCommand_SetChannel(CanCommand* cmd, int channel)
 {
     if (cmd) cmd->channel = channel;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Send frame                                                         */
-/* ------------------------------------------------------------------ */
 int CanCommand_SendFrame(CanCommand* cmd, uint32_t can_id,
                          const uint8_t* data, int dlc,
                          int is_extended, int is_remote)
 {
-    if (!cmd || cmd->channel == PCAN_NONEBUS) return 0;
+    if (!cmd || cmd->channel == CAN_HAL_INVALID_HANDLE) return 0;
+    if (!cmd->hal) return 0;
 
-    TPCANMsg msg;
-    msg.ID      = can_id;
-    msg.MSGTYPE = (TPCANMessageType)(is_extended ? PCAN_MODE_EXTENDED
-                                                 : PCAN_MODE_STANDARD);
+    CanHalFrame frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.id = can_id;
+    frame.flags = is_extended ? CAN_HAL_FLAG_EXTENDED : CAN_HAL_FLAG_STANDARD;
     if (is_remote)
-        msg.MSGTYPE |= PCAN_MESSAGE_RTR;
-    msg.LEN = (BYTE)((dlc > 8) ? 8 : dlc);
-    memset(msg.DATA, 0, 8);
+        frame.flags |= CAN_HAL_FLAG_REMOTE;
+    frame.dlc = (dlc > 8) ? 8 : (uint8_t)dlc;
     if (data && dlc > 0)
-        memcpy(msg.DATA, data, msg.LEN);
+        memcpy(frame.data, data, frame.dlc);
 
-    TPCANStatus status = CAN_Write(cmd->channel, &msg);
+    int status = CanHal_Write(cmd->hal, &frame);
 
-    /* Notify callback about TX frame */
-    if (cmd->frameCallback && status == PCAN_ERROR_OK) {
-        cmd->frameCallback(can_id, data, msg.LEN, 1, cmd->frameCallbackCtx);
+    if (cmd->frameCallback && status) {
+        cmd->frameCallback(can_id, data, frame.dlc, 1, cmd->frameCallbackCtx);
     }
 
-    return (status == PCAN_ERROR_OK) ? 1 : 0;
+    return status;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Quick commands                                                     */
-/* ------------------------------------------------------------------ */
 int CanCommand_GetQuickCommandCount(CanCommand* cmd)
 {
     return cmd ? cmd->quickCommandCount : 0;
@@ -143,9 +119,6 @@ void CanCommand_SetQuickCommands(CanCommand* cmd,
     cmd->quickCommandCount = count;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Frame callback                                                     */
-/* ------------------------------------------------------------------ */
 void CanCommand_SetFrameCallback(CanCommand* cmd, CanFrameCallback cb,
                                  void* ctx)
 {
@@ -154,9 +127,6 @@ void CanCommand_SetFrameCallback(CanCommand* cmd, CanFrameCallback cb,
     cmd->frameCallbackCtx = ctx;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Monitor start / stop                                               */
-/* ------------------------------------------------------------------ */
 void CanCommand_StartMonitor(CanCommand* cmd)
 {
     if (!cmd || cmd->monitorRunning) return;

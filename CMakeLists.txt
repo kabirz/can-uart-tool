@@ -5,6 +5,9 @@ add_compile_definitions(UNICODE _UNICODE)
 
 set(SOURCES
     src/main.c
+    src/can_hal.c
+    src/can_hal_pcan.c
+    src/can_hal_ixxat.c
     src/can_manager.c
     src/uart_manager.c
     src/tab_can_upgrade.c
@@ -49,6 +52,3 @@ elseif(MSVC)
 endif()
 
 target_include_directories(can-uart-tool PRIVATE include)
-target_link_libraries(can-uart-tool PRIVATE
-    "${CMAKE_SOURCE_DIR}/libs/x64/PCANBasic.lib"
-)

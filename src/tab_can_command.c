@@ -39,7 +39,7 @@
 /* ------------------------------------------------------------------ */
 typedef struct {
     CanCommand  *canCmd;
-    TPCANHandle  channel;
+    int          channel;
     int          isActive;
 
     /* Frame config controls */
@@ -199,7 +199,7 @@ static void CanFrameCb(uint32_t id, const uint8_t *data,
 /* Update enable/disable state of controls based on channel */
 static void UpdateControlStates(TAB_CMD_DATA *pData)
 {
-    BOOL connected = (pData->channel != PCAN_NONEBUS);
+    BOOL connected = (pData->channel != CAN_HAL_INVALID_HANDLE);
     EnableWindow(pData->hBtnSend, connected);
     EnableWindow(pData->hEditCanId, connected);
     EnableWindow(pData->hEditCanData, connected);
@@ -232,7 +232,7 @@ static int ParseHexData(const wchar_t *str, uint8_t *out, int maxBytes)
 /* Send a LoRa config CAN frame to device */
 static void SendLoraCommand(TAB_CMD_DATA *pData, uint8_t cmd)
 {
-    if (!pData->canCmd || pData->channel == PCAN_NONEBUS) return;
+    if (!pData->canCmd || pData->channel == CAN_HAL_INVALID_HANDLE) return;
 
     uint8_t data[8] = {0};
     int dlc = 1;
@@ -291,7 +291,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         HINSTANCE hInst = cs->hInstance;
 
         pData->canCmd = (CanCommand *)cs->lpCreateParams;
-        pData->channel = PCAN_NONEBUS;
+        pData->channel = CAN_HAL_INVALID_HANDLE;
         pData->isActive = 0;
         pData->lastLoraCmd = 0;
 
@@ -587,7 +587,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         switch (LOWORD(wParam)) {
 
         case IDC_BUTTON_CAN_SEND: {
-            if (!pData->canCmd || pData->channel == PCAN_NONEBUS)
+            if (!pData->canCmd || pData->channel == CAN_HAL_INVALID_HANDLE)
                 return 0;
 
             wchar_t idStr[32];
@@ -729,7 +729,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
 
     /* ---- Show/Hide handling for monitor start/stop ---- */
     case WM_SHOWWINDOW: {
-        if (wParam && pData->channel != PCAN_NONEBUS && !pData->isActive) {
+        if (wParam && pData->channel != CAN_HAL_INVALID_HANDLE && !pData->isActive) {
             pData->isActive = 1;
             CanCommand_StartMonitor(pData->canCmd);
         } else if (!wParam && pData->isActive) {
@@ -804,7 +804,7 @@ void TabCanCommand_Destroy(HWND hwnd)
         DestroyWindow(hwnd);
 }
 
-void TabCanCommand_UpdateChannel(HWND hwnd, TPCANHandle channel)
+void TabCanCommand_UpdateChannel(HWND hwnd, int channel)
 {
     TAB_CMD_DATA *pData = GetTabPageData(hwnd);
     if (!pData) return;
@@ -813,9 +813,9 @@ void TabCanCommand_UpdateChannel(HWND hwnd, TPCANHandle channel)
     CanCommand_SetChannel(pData->canCmd, channel);
     UpdateControlStates(pData);
 
-    if (pData->isActive && channel != PCAN_NONEBUS) {
+    if (pData->isActive && channel != CAN_HAL_INVALID_HANDLE) {
         CanCommand_StartMonitor(pData->canCmd);
-    } else if (channel == PCAN_NONEBUS) {
+    } else if (channel == CAN_HAL_INVALID_HANDLE) {
         CanCommand_StopMonitor(pData->canCmd);
     }
 }

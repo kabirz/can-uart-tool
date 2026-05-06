@@ -9,6 +9,7 @@
 #include <commctrl.h>
 #include <commdlg.h>
 #include "resource.h"
+#include "can_hal.h"
 #include "can_manager.h"
 #include "uart_manager.h"
 #include "can_command.h"
@@ -20,7 +21,7 @@ extern HWND TabCanUpgrade_Create(HWND hParent, HINSTANCE hInst, CanManager *can_
 extern void TabCanUpgrade_Destroy(HWND hwnd);
 extern HWND TabCanCommand_Create(HWND hParent, HINSTANCE hInst, CanCommand *cmd);
 extern void TabCanCommand_Destroy(HWND hwnd);
-extern void TabCanCommand_UpdateChannel(HWND hwnd, TPCANHandle channel);
+extern void TabCanCommand_UpdateChannel(HWND hwnd, int channel);
 extern HWND TabUartTerminal_Create(HWND hParent, HINSTANCE hInst, UartTerminal *uartTerm);
 extern void TabUartTerminal_Destroy(HWND hwnd);
 extern HWND TabNetTerminal_Create(HWND hParent, HINSTANCE hInst, NetTerminal *netTerm);
@@ -41,7 +42,8 @@ typedef struct {
     HWND  hTabPages[MAX_TABS];
     HFONT hFont;
     HFONT hTabFont;
-    CanManager  *canMgr;
+    CanHal       *canHal;
+    CanManager   *canMgr;
     UartManager *uartMgr;
     CanCommand  *canCmd;
     UartTerminal *uartTerm;
@@ -292,7 +294,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
     /* CAN 连接共享：Tab0 通知 Tab1 更新 CAN 通道 */
     case WM_CAN_CONNECTED:
         if (g_App.hTabPages[1]) {
-            TabCanCommand_UpdateChannel(g_App.hTabPages[1], (TPCANHandle)wParam);
+            TabCanCommand_UpdateChannel(g_App.hTabPages[1], (int)wParam);
             SendMessageW(g_App.hStatusBar, SB_SETTEXTW, 0,
                          (LPARAM)L"CAN 已连接 - 通道已同步到 CAN 命令页");
         }
@@ -300,7 +302,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 
     case WM_CAN_DISCONNECTED:
         if (g_App.hTabPages[1]) {
-            TabCanCommand_UpdateChannel(g_App.hTabPages[1], PCAN_NONEBUS);
+            TabCanCommand_UpdateChannel(g_App.hTabPages[1], CAN_HAL_INVALID_HANDLE);
             SendMessageW(g_App.hStatusBar, SB_SETTEXTW, 0,
                          (LPARAM)L"CAN 已断开");
         }
@@ -343,6 +345,10 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
             CanManager_Destroy(g_App.canMgr);
             g_App.canMgr = NULL;
         }
+        if (g_App.canHal) {
+            CanHal_Destroy(g_App.canHal);
+            g_App.canHal = NULL;
+        }
         if (g_App.uartMgr) {
             UartManager_Destroy(g_App.uartMgr);
             g_App.uartMgr = NULL;
@@ -364,8 +370,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     /* Initialize common controls */
     InitCommonControls();
 
+    /* Create CAN HAL (default: PCAN) */
+    g_App.canHal = CanHal_Create(CAN_HAL_ADAPTER_PCAN);
+    if (!g_App.canHal) {
+        MessageBoxW(NULL, L"无法创建CAN HAL", L"错误", MB_OK | MB_ICONERROR);
+        return 1;
+    }
+
     /* Create CAN and UART managers */
-    g_App.canMgr = CanManager_Create();
+    g_App.canMgr = CanManager_Create(g_App.canHal);
     if (!g_App.canMgr) {
         MessageBoxW(NULL, L"无法创建CAN管理器", L"错误", MB_OK | MB_ICONERROR);
         return 1;
@@ -378,7 +391,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     }
 
     /* Create CAN command module */
-    g_App.canCmd = CanCommand_Create(PCAN_NONEBUS);
+    g_App.canCmd = CanCommand_Create(g_App.canHal);
     if (!g_App.canCmd) {
         MessageBoxW(NULL, L"无法创建CAN命令模块", L"错误", MB_OK | MB_ICONERROR);
         UartManager_Destroy(g_App.uartMgr);

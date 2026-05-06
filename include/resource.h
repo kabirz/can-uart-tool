@@ -37,6 +37,7 @@
 #define IDC_EDIT_LOG                    1115
 #define IDC_BUTTON_CLEAR_LOG            1116
 #define IDC_LABEL_PERCENT               1117
+#define IDC_COMBO_ADAPTER               1118
 
 // Tab2: CAN 命令发送 (1200-1299)
 #define IDC_EDIT_CAN_ID                 1201

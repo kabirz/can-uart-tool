@@ -3,7 +3,7 @@
 
 #include <windows.h>
 #include <stdint.h>
-#include "PCANBasic.h"
+#include "can_hal.h"
 
 #define MAX_QUICK_COMMANDS  32
 #define QUICK_CMD_NAME_LEN  32
@@ -22,10 +22,10 @@ typedef struct CanCommand CanCommand;
 typedef void (*CanFrameCallback)(uint32_t id, const uint8_t* data,
                                   int dlc, int is_tx, void* context);
 
-CanCommand* CanCommand_Create(TPCANHandle channel);
+CanCommand* CanCommand_Create(CanHal *hal);
 void CanCommand_Destroy(CanCommand* cmd);
 
-void CanCommand_SetChannel(CanCommand* cmd, TPCANHandle channel);
+void CanCommand_SetChannel(CanCommand* cmd, int channel);
 
 int CanCommand_SendFrame(CanCommand* cmd, uint32_t can_id,
                          const uint8_t* data, int dlc,
@@ -39,4 +39,4 @@ void CanCommand_SetFrameCallback(CanCommand* cmd, CanFrameCallback cb, void* ctx
 void CanCommand_StartMonitor(CanCommand* cmd);
 void CanCommand_StopMonitor(CanCommand* cmd);
 
-#endif // CAN_COMMAND_H
+#endif
