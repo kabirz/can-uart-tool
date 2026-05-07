@@ -51,20 +51,26 @@
 #define IDC_CHECK_AUTOSCROLL            1209
 #define IDC_BUTTON_CLEAR_MONITOR        1210
 
-// Tab2: CAN 命令 - LoRa 配置 (1220-1250)
+// Tab2: CAN 命令 - LoRa 配置 (1220-1260)
 #define IDC_EDIT_LORA_PROT              1220
 #define IDC_EDIT_LORA_MODE              1221
-#define IDC_EDIT_LORA_SPD               1222
-#define IDC_EDIT_LORA_CH                1223
-#define IDC_EDIT_LORA_NID               1224
-#define IDC_EDIT_LORA_GWID              1225
-#define IDC_BUTTON_LORA_QUERY_CFG       1226
-#define IDC_BUTTON_LORA_SET_CFG         1227
-#define IDC_BUTTON_LORA_QUERY_NID       1228
-#define IDC_BUTTON_LORA_SET_NID         1229
-#define IDC_BUTTON_LORA_QUERY_GWID      1230
-#define IDC_BUTTON_LORA_SET_GWID        1231
-#define IDC_LABEL_LORA_STATUS           1232
+#define IDC_COMBO_LORA_SPD1             1222
+#define IDC_EDIT_LORA_CH1               1223
+#define IDC_COMBO_LORA_SPD2             1224
+#define IDC_EDIT_LORA_CH2               1225
+#define IDC_COMBO_LORA_PNUM             1226
+#define IDC_EDIT_LORA_NID               1227
+#define IDC_EDIT_LORA_GWID              1228
+#define IDC_BUTTON_LORA_QUERY_CFG       1229
+#define IDC_BUTTON_LORA_SET_MODE        1230
+#define IDC_BUTTON_LORA_SET_CH1         1231
+#define IDC_BUTTON_LORA_SET_CH2         1232
+#define IDC_BUTTON_LORA_SET_PNUM        1233
+#define IDC_BUTTON_LORA_QUERY_NID       1234
+#define IDC_BUTTON_LORA_SET_NID         1235
+#define IDC_BUTTON_LORA_QUERY_GWID      1236
+#define IDC_BUTTON_LORA_SET_GWID        1237
+#define IDC_LABEL_LORA_STATUS           1238
 
 // Tab3: UART Shell 终端 (1300-1399)
 #define IDC_COMBO_UART_PORT             1301
