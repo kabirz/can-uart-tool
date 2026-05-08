@@ -325,7 +325,7 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
 
         pData->hBtnUart = CreateWindowExW(0, L"BUTTON", L"UART",
             WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-            cx + lblW + 8 + 78, cy, 80, CTRL_H, hwnd, (HMENU)0x9002, hInst, NULL);
+            cx + lblW + 8 + 150, cy, 80, CTRL_H, hwnd, (HMENU)0x9002, hInst, NULL);
         SendMessageW(pData->hBtnUart, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
         cy += lineH;
 

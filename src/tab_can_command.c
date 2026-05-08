@@ -482,11 +482,11 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         /* Row 2: CH1 (SPD + CH, alone) */
         CreateLabel(hwnd, hInst, -1, cx, cy + 3, llW, 22,
             L"CH1:", pData->hFont);
-        CreateLabel(hwnd, hInst, -1, cx + llW + 4, cy + 3, 34, 22,
+        CreateLabel(hwnd, hInst, -1, cx + llW + 4, cy + 3, 56, 22,
             L"SPD:", pData->hFont);
         pData->hComboSpd1 = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-            cx + llW + 40, cy, 80, 200,
+            cx + llW + 62, cy, 80, 200,
             hwnd, (HMENU)IDC_COMBO_LORA_SPD1, hInst, NULL);
         SendMessageW(pData->hComboSpd1, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
         for (int s = 4; s <= 11; s++) {
@@ -495,23 +495,25 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         }
         SendMessageW(pData->hComboSpd1, CB_SETCURSEL, 3, 0);
 
-        CreateLabel(hwnd, hInst, -1, cx + llW + 124, cy + 3, 34, 22,
+        CreateLabel(hwnd, hInst, -1, cx + llW + 150, cy + 3, 30, 22,
             L"CH:", pData->hFont);
         pData->hEditCh1 = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"4800",
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-            cx + llW + 160, cy, 100, 24,
+            cx + llW + 182, cy, 80, 24,
             hwnd, (HMENU)IDC_EDIT_LORA_CH1, hInst, NULL);
         SendMessageW(pData->hEditCh1, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
+        CreateLabel(hwnd, hInst, -1, cx + llW + 266, cy + 3, 150, 22,
+            L"(4100~5100KHz)", pData->hFont);
         cy += lineH;
 
         /* Row 3: CH2 (SPD + CH, alone) */
         CreateLabel(hwnd, hInst, -1, cx, cy + 3, llW, 22,
             L"CH2:", pData->hFont);
-        CreateLabel(hwnd, hInst, -1, cx + llW + 4, cy + 3, 34, 22,
+        CreateLabel(hwnd, hInst, -1, cx + llW + 4, cy + 3, 56, 22,
             L"SPD:", pData->hFont);
         pData->hComboSpd2 = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-            cx + llW + 40, cy, 80, 200,
+            cx + llW + 62, cy, 80, 200,
             hwnd, (HMENU)IDC_COMBO_LORA_SPD2, hInst, NULL);
         SendMessageW(pData->hComboSpd2, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
         for (int s = 4; s <= 11; s++) {
@@ -520,13 +522,15 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         }
         SendMessageW(pData->hComboSpd2, CB_SETCURSEL, 3, 0);
 
-        CreateLabel(hwnd, hInst, -1, cx + llW + 124, cy + 3, 34, 22,
+        CreateLabel(hwnd, hInst, -1, cx + llW + 150, cy + 3, 30, 22,
             L"CH:", pData->hFont);
         pData->hEditCh2 = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"4800",
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-            cx + llW + 160, cy, 100, 24,
+            cx + llW + 182, cy, 80, 24,
             hwnd, (HMENU)IDC_EDIT_LORA_CH2, hInst, NULL);
         SendMessageW(pData->hEditCh2, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
+        CreateLabel(hwnd, hInst, -1, cx + llW + 266, cy + 3, 150, 22,
+            L"(4100~5100KHz)", pData->hFont);
         cy += lineH;
 
         /* Row 4: PNUM */
