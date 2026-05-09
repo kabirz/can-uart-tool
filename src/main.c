@@ -10,6 +10,7 @@
 #include <commdlg.h>
 #include "resource.h"
 #include "can_hal.h"
+#include "can_dispatcher.h"
 #include "can_manager.h"
 #include "uart_manager.h"
 #include "can_command.h"
@@ -42,12 +43,13 @@ typedef struct {
     HWND  hTabPages[MAX_TABS];
     HFONT hFont;
     HFONT hTabFont;
-    CanHal       *canHal;
-    CanManager   *canMgr;
-    UartManager *uartMgr;
-    CanCommand  *canCmd;
-    UartTerminal *uartTerm;
-    NetTerminal  *netTerm;
+    CanHal        *canHal;
+    CanDispatcher *canDisp;
+    CanManager    *canMgr;
+    UartManager   *uartMgr;
+    CanCommand    *canCmd;
+    UartTerminal  *uartTerm;
+    NetTerminal   *netTerm;
 } APP_DATA;
 
 static APP_DATA g_App;
@@ -166,7 +168,8 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
         TCITEMW tie;
         tie.mask = TCIF_TEXT;
         for (i = 0; i < MAX_TABS; i++) {
-            tie.pszText = (LPWSTR)g_TabNames[i];
+            /* TCITEMW.pszText is LPWSTR (non-const), safe cast for read-only text */
+            tie.pszText = (wchar_t *)g_TabNames[i];
             TabCtrl_InsertItem(g_App.hTabCtrl, i, &tie);
         }
 
@@ -308,6 +311,43 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
         }
         return 0;
 
+    /* Adapter switch: replace HAL + dispatcher, update all consumers */
+    case WM_ADAPTER_CHANGED: {
+        int adapter_idx = (int)wParam;
+        if (adapter_idx < 0 || adapter_idx >= CAN_HAL_ADAPTER_COUNT) return 0;
+
+        CanHal *newHal = CanHal_Create(adapter_idx);
+        if (!newHal) return 0;
+
+        CanDispatcher *newDisp = CanDisp_Create(newHal);
+        if (!newDisp) {
+            CanHal_Destroy(newHal);
+            return 0;
+        }
+
+        /* Swap: update all consumers, then destroy old */
+        CanHal        *oldHal  = g_App.canHal;
+        CanDispatcher *oldDisp = g_App.canDisp;
+
+        g_App.canHal  = newHal;
+        g_App.canDisp = newDisp;
+
+        CanManager_ReplaceHal(g_App.canMgr, newHal, newDisp);
+        CanCommand_ReplaceHal(g_App.canCmd, newHal, newDisp);
+
+        CanDisp_Destroy(oldDisp);
+        CanHal_Destroy(oldHal);
+
+        /* Tell Tab0 to refresh device list */
+        if (g_App.hTabPages[0])
+            PostMessage(g_App.hTabPages[0], WM_ADAPTER_CHANGED, 0, 0);
+
+        wchar_t status[128];
+        wsprintfW(status, L"适配器已切换到 %s", CanHal_GetName(newHal));
+        SendMessageW(g_App.hStatusBar, SB_SETTEXTW, 0, (LPARAM)status);
+        return 0;
+    }
+
     case WM_DESTROY:
         /* Destroy tab pages explicitly */
         TabCanUpgrade_Destroy(g_App.hTabPages[0]);
@@ -345,6 +385,10 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
             CanManager_Destroy(g_App.canMgr);
             g_App.canMgr = NULL;
         }
+        if (g_App.canDisp) {
+            CanDisp_Destroy(g_App.canDisp);
+            g_App.canDisp = NULL;
+        }
         if (g_App.canHal) {
             CanHal_Destroy(g_App.canHal);
             g_App.canHal = NULL;
@@ -364,6 +408,8 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                    LPSTR lpCmdLine, int nCmdShow)
 {
+    (void)hPrevInstance;
+    (void)lpCmdLine;
     HWND        hWnd;
     MSG         msg;
 
@@ -377,8 +423,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         return 1;
     }
 
+    /* Create CAN frame dispatcher */
+    g_App.canDisp = CanDisp_Create(g_App.canHal);
+    if (!g_App.canDisp) {
+        CanHal_Destroy(g_App.canHal);
+        MessageBoxW(NULL, L"无法创建CAN分发器", L"错误", MB_OK | MB_ICONERROR);
+        return 1;
+    }
+
     /* Create CAN and UART managers */
-    g_App.canMgr = CanManager_Create(g_App.canHal);
+    g_App.canMgr = CanManager_Create(g_App.canHal, g_App.canDisp);
     if (!g_App.canMgr) {
         MessageBoxW(NULL, L"无法创建CAN管理器", L"错误", MB_OK | MB_ICONERROR);
         return 1;
@@ -391,7 +445,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     }
 
     /* Create CAN command module */
-    g_App.canCmd = CanCommand_Create(g_App.canHal);
+    g_App.canCmd = CanCommand_Create(g_App.canHal, g_App.canDisp);
     if (!g_App.canCmd) {
         MessageBoxW(NULL, L"无法创建CAN命令模块", L"错误", MB_OK | MB_ICONERROR);
         UartManager_Destroy(g_App.uartMgr);
@@ -427,7 +481,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     wc.lpfnWndProc   = WndProc;
     wc.hInstance     = hInstance;
     wc.hIcon         = LoadIconW(hInstance, MAKEINTRESOURCEW(IDI_APPICON));
-    wc.hCursor       = LoadCursorW(NULL, IDC_ARROW);
+    wc.hCursor       = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
     wc.lpszClassName = L"CanUartToolClass";
     wc.hIconSm       = wc.hIcon;

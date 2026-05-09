@@ -1,29 +1,36 @@
 #include "can_manager.h"
+#include "can_dispatcher.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 struct CanManager {
     CRITICAL_SECTION criticalSection;
-    CanHal *hal;
-    int channel;
-    msgCallback msgCallback;
-    progressCallback progressCallback;
-    int initialized;
-    int virtualMode;
+    CanHal          *hal;
+    CanDispatcher   *disp;
+    int              channel;
+    msgCallback      msgCallbackFn;
+    void            *msgCallbackCtx;
+    progressCallback progressCallbackFn;
+    void            *progressCallbackCtx;
+    int              initialized;
+    int              virtualMode;
 };
 
-CanManager* CanManager_Create(CanHal *hal) {
+CanManager* CanManager_Create(CanHal *hal, CanDispatcher *disp) {
     CanManager* mgr = (CanManager*)malloc(sizeof(CanManager));
     if (!mgr) return NULL;
 
     InitializeCriticalSection(&mgr->criticalSection);
-    mgr->hal = hal;
-    mgr->channel = CAN_HAL_INVALID_HANDLE;
-    mgr->msgCallback = NULL;
-    mgr->progressCallback = NULL;
-    mgr->initialized = 1;
-    mgr->virtualMode = 0;
+    mgr->hal                = hal;
+    mgr->disp               = disp;
+    mgr->channel            = CAN_HAL_INVALID_HANDLE;
+    mgr->msgCallbackFn      = NULL;
+    mgr->msgCallbackCtx     = NULL;
+    mgr->progressCallbackFn = NULL;
+    mgr->progressCallbackCtx = NULL;
+    mgr->initialized        = 1;
+    mgr->virtualMode        = 0;
 
     return mgr;
 }
@@ -36,21 +43,29 @@ void CanManager_Destroy(CanManager* mgr) {
     free(mgr);
 }
 
-void CanManager_SetCallback(CanManager* mgr, msgCallback msg_call) {
+void CanManager_SetCallback(CanManager* mgr, msgCallback msg_call, void *ctx) {
     if (mgr) {
-        mgr->msgCallback = msg_call;
+        mgr->msgCallbackFn  = msg_call;
+        mgr->msgCallbackCtx = ctx;
     }
 }
 
-void CanManager_SetProgressCallback(CanManager* mgr, progressCallback progress_call) {
+void CanManager_SetProgressCallback(CanManager* mgr, progressCallback progress_call, void *ctx) {
     if (mgr) {
-        mgr->progressCallback = progress_call;
+        mgr->progressCallbackFn  = progress_call;
+        mgr->progressCallbackCtx = ctx;
     }
 }
 
 static void appendLog(CanManager* mgr, const char* msg) {
-    if (mgr && mgr->msgCallback) {
-        mgr->msgCallback(msg);
+    if (mgr && mgr->msgCallbackFn) {
+        mgr->msgCallbackFn(msg, mgr->msgCallbackCtx);
+    }
+}
+
+static void reportProgress(CanManager* mgr, int percent) {
+    if (mgr && mgr->progressCallbackFn) {
+        mgr->progressCallbackFn(percent, mgr->progressCallbackCtx);
     }
 }
 
@@ -60,6 +75,19 @@ int CanManager_IsVirtualChannel(int channel) {
 
 CanHal *CanManager_GetHal(CanManager* mgr) {
     return mgr ? mgr->hal : NULL;
+}
+
+CanDispatcher *CanManager_GetDisp(CanManager* mgr) {
+    return mgr ? mgr->disp : NULL;
+}
+
+void CanManager_ReplaceHal(CanManager *mgr, CanHal *newHal, CanDispatcher *newDisp)
+{
+    if (!mgr) return;
+    EnterCriticalSection(&mgr->criticalSection);
+    mgr->hal  = newHal;
+    mgr->disp = newDisp;
+    LeaveCriticalSection(&mgr->criticalSection);
 }
 
 int CanManager_Connect(CanManager* mgr, int channel, int baud_index) {
@@ -92,10 +120,15 @@ int CanManager_Connect(CanManager* mgr, int channel, int baud_index) {
         mgr->channel = channel;
         mgr->virtualMode = 0;
         LeaveCriticalSection(&mgr->criticalSection);
+
         char logMsg[64];
         sprintf(logMsg, "CAN(id=%xh) 连接成功 (%s)", channel, CanHal_GetName(mgr->hal));
         appendLog(mgr, logMsg);
-        CanHal_SetFilter(mgr->hal, PLATFORM_TX, PLATFORM_TX);
+
+        /* Start dispatcher read thread – accepts ALL frames */
+        if (mgr->disp)
+            CanDisp_Start(mgr->disp);
+
         return 1;
     } else {
         LeaveCriticalSection(&mgr->criticalSection);
@@ -108,6 +141,10 @@ void CanManager_Disconnect(CanManager* mgr) {
     if (!mgr || !mgr->initialized) return;
 
     EnterCriticalSection(&mgr->criticalSection);
+
+    /* Stop dispatcher first */
+    if (mgr->disp)
+        CanDisp_Stop(mgr->disp);
 
     char logMsg[64];
     if (mgr->virtualMode) {
@@ -123,20 +160,19 @@ void CanManager_Disconnect(CanManager* mgr) {
     appendLog(mgr, logMsg);
 }
 
+/* Wait for a specific CAN response frame via dispatcher */
 static int CAN_WaitForResponse(CanManager* mgr, uint32_t* code, uint32_t* param, int timeoutMs) {
     CanHalFrame frame;
-    DWORD startTime = GetTickCount();
 
-    while ((int)(GetTickCount() - startTime) < timeoutMs) {
-        int result = CanHal_Read(mgr->hal, &frame, 10);
-        if (result && frame.id == PLATFORM_TX) {
-            can_frame_t* f = (can_frame_t*)frame.data;
-            *code = f->code;
-            *param = f->val;
-            return 1;
-        }
-    }
-    return 0;
+    if (!mgr->disp) return 0;
+
+    if (!CanDisp_WaitFrame(mgr->disp, PLATFORM_TX, &frame, timeoutMs))
+        return 0;
+
+    can_frame_t* f = (can_frame_t*)frame.data;
+    *code = f->code;
+    *param = f->val;
+    return 1;
 }
 
 uint32_t CanManager_GetFirmwareVersion(CanManager* mgr) {
@@ -255,7 +291,7 @@ static int VirtualCAN_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName) 
     }
 
     DWORD fileSize = GetFileSize(hSrcFile, NULL);
-    sprintf(logMsg, "开始固件升级, 固件大小: %u 字节", fileSize);
+    sprintf(logMsg, "开始固件升级, 固件大小: %lu 字节", fileSize);
     appendLog(mgr, logMsg);
     appendLog(mgr, "输出文件: virtual_firmware.bin");
 
@@ -271,10 +307,7 @@ static int VirtualCAN_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName) 
         totalBytes += bytesRead;
 
         if (totalBytes % 64 == 0 || totalBytes == fileSize) {
-            if (mgr->progressCallback) {
-                int percent = (int)(totalBytes * 100 / fileSize);
-                mgr->progressCallback(percent);
-            }
+            reportProgress(mgr, (int)(totalBytes * 100 / fileSize));
             if (totalBytes % 1024 == 0) {
                 Sleep(10);
             }
@@ -308,7 +341,7 @@ static int HAL_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName, int tes
     }
 
     DWORD fileSize = GetFileSize(hFile, NULL);
-    sprintf(logMsg, "开始固件升级, 固件大小: %u 字节", fileSize);
+    sprintf(logMsg, "开始固件升级, 固件大小: %lu 字节", fileSize);
     appendLog(mgr, logMsg);
 
     CanHalFrame frame;
@@ -356,10 +389,7 @@ static int HAL_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName, int tes
         bytesSent += bytesRead;
 
         if (bytesSent % 64 == 0 || bytesSent == fileSize) {
-            if (mgr->progressCallback) {
-                int percent = (int)(bytesSent * 100 / fileSize);
-                mgr->progressCallback(percent);
-            }
+            reportProgress(mgr, (int)(bytesSent * 100 / fileSize));
 
             if (!CAN_WaitForResponse(mgr, &code, &offset, 5000)) {
                 CloseHandle(hFile);
@@ -379,9 +409,7 @@ static int HAL_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName, int tes
 
     CloseHandle(hFile);
 
-    if (mgr->progressCallback) {
-        mgr->progressCallback(100);
-    }
+    reportProgress(mgr, 100);
 
     frame.id = PLATFORM_RX;
     frame.dlc = 8;
@@ -435,6 +463,6 @@ int CanManager_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName, int tes
 
 int CanManager_DetectDevice(CanManager* mgr, int* channels, int maxCount) {
     if (!mgr || !mgr->hal) return 0;
-    CanHal_SetLogCallback(mgr->hal, mgr->msgCallback);
+    CanHal_SetLogCallback(mgr->hal, NULL);  /* suppress duplicate log via HAL */
     return CanHal_DetectDevices(mgr->hal, channels, maxCount);
 }

@@ -7,7 +7,6 @@
 #include <windows.h>
 #include <richedit.h>
 #include <commctrl.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "resource.h"
@@ -221,7 +220,6 @@ static LRESULT CALLBACK TabUartTerminal_WndProc(HWND hwnd, UINT uMsg,
         /* ---- Layout for 1200x1080 client area ---- */
         /* Tab page display area ~1172 x 1010 */
         int margin = 10;
-        int cx, cy;
 
         /* ========== Connection Bar (top, full width) ========== */
         int barY = margin;
@@ -504,7 +502,7 @@ HWND TabUartTerminal_Create(HWND hParent, HINSTANCE hInst, UartTerminal *uartTer
         wc.style         = CS_HREDRAW | CS_VREDRAW;
         wc.lpfnWndProc   = TabUartTerminal_WndProc;
         wc.hInstance     = hInst;
-        wc.hCursor       = LoadCursorW(NULL, IDC_ARROW);
+        wc.hCursor       = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
         wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
         wc.lpszClassName = TAB_UART_CLASS;
         RegisterClassExW(&wc);

@@ -1,7 +1,6 @@
 #include "terminal_common.h"
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 #include <richedit.h>
 
 /* ------------------------------------------------------------------ */

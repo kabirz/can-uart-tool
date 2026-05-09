@@ -1,6 +1,5 @@
 #include "can_hal.h"
 #include <stdlib.h>
-#include <string.h>
 
 const int CAN_HAL_BAUD_VALUES[CAN_HAL_BAUD_COUNT] = {
     10000, 20000, 50000, 100000,

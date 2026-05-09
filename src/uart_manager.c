@@ -343,7 +343,7 @@ int UartManager_Connect(UartManager* mgr, const char* portName, DWORD baudRate) 
     mgr->baudRate = baudRate;
 
     char logMsg[64];
-    sprintf(logMsg, "串口 %s 连接成功 (%u bps)", portName, baudRate);
+    sprintf(logMsg, "串口 %s 连接成功 (%lu bps)", portName, baudRate);
     AppendLog(mgr, logMsg);
 
     LeaveCriticalSection(&mgr->criticalSection);
@@ -491,7 +491,7 @@ int UartManager_FirmwareUpgrade(UartManager* mgr, const wchar_t* fileName, int t
     }
 
     DWORD fileSize = GetFileSize(hFile, NULL);
-    sprintf(logMsg, "开始固件升级, 固件大小: %u 字节", fileSize);
+    sprintf(logMsg, "开始固件升级, 固件大小: %lu 字节", fileSize);
     AppendLog(mgr, logMsg);
 
     // 发送开始升级命令

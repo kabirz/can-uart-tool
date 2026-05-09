@@ -97,6 +97,8 @@
 #define WM_UART_DATA_RECEIVED           (WM_APP + 5)
 #define WM_CAN_CONNECTED                (WM_APP + 6)
 #define WM_CAN_DISCONNECTED             (WM_APP + 7)
+#define WM_ADAPTER_CHANGED              (WM_APP + 8)
+#define WM_LOG_MESSAGE                  (WM_APP + 9)
 
 // Layout constants
 #define WINDOW_WIDTH                    1200

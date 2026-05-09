@@ -5,3 +5,5 @@ build/
 *.o
 *.ilk
 *.pdb
+.cache
+compile_commands.json

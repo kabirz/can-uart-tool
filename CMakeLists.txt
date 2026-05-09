@@ -8,6 +8,7 @@ set(SOURCES
     src/can_hal.c
     src/can_hal_pcan.c
     src/can_hal_ixxat.c
+    src/can_dispatcher.c
     src/can_manager.c
     src/uart_manager.c
     src/tab_can_upgrade.c

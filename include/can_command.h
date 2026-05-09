@@ -17,15 +17,19 @@ typedef struct {
     char name[QUICK_CMD_NAME_LEN];
 } CanQuickCommand;
 
+typedef struct CanDispatcher CanDispatcher;
 typedef struct CanCommand CanCommand;
 
 typedef void (*CanFrameCallback)(uint32_t id, const uint8_t* data,
                                   int dlc, int is_tx, void* context);
 
-CanCommand* CanCommand_Create(CanHal *hal);
+CanCommand* CanCommand_Create(CanHal *hal, CanDispatcher *disp);
 void CanCommand_Destroy(CanCommand* cmd);
 
 void CanCommand_SetChannel(CanCommand* cmd, int channel);
+
+/* Replace HAL + dispatcher (for adapter switching) */
+void CanCommand_ReplaceHal(CanCommand *cmd, CanHal *hal, CanDispatcher *disp);
 
 int CanCommand_SendFrame(CanCommand* cmd, uint32_t can_id,
                          const uint8_t* data, int dlc,

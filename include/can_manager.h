@@ -32,16 +32,18 @@ typedef struct {
     uint32_t val;
 } can_frame_t;
 
-typedef void (*msgCallback)(const char * msg);
-typedef void (*progressCallback)(int percent);
+typedef struct CanDispatcher CanDispatcher;
+
+typedef void (*msgCallback)(const char *msg, void *ctx);
+typedef void (*progressCallback)(int percent, void *ctx);
 
 typedef struct CanManager CanManager;
 
-CanManager* CanManager_Create(CanHal *hal);
+CanManager* CanManager_Create(CanHal *hal, CanDispatcher *disp);
 void CanManager_Destroy(CanManager* mgr);
 
-void CanManager_SetCallback(CanManager* mgr, msgCallback msg_call);
-void CanManager_SetProgressCallback(CanManager* mgr, progressCallback progress_call);
+void CanManager_SetCallback(CanManager* mgr, msgCallback msg_call, void *ctx);
+void CanManager_SetProgressCallback(CanManager* mgr, progressCallback progress_call, void *ctx);
 
 int CanManager_Connect(CanManager* mgr, int channel, int baud_index);
 void CanManager_Disconnect(CanManager* mgr);
@@ -51,6 +53,10 @@ int CanManager_FirmwareUpgrade(CanManager* mgr, const wchar_t* fileName, int tes
 int CanManager_DetectDevice(CanManager* mgr, int* channels, int maxCount);
 int CanManager_IsVirtualChannel(int channel);
 CanHal *CanManager_GetHal(CanManager* mgr);
+CanDispatcher *CanManager_GetDisp(CanManager* mgr);
+
+/* Adapter switch: replace HAL + dispatcher (must be disconnected) */
+void CanManager_ReplaceHal(CanManager *mgr, CanHal *newHal, CanDispatcher *newDisp);
 
 #ifdef __cplusplus
 }

@@ -1,12 +1,14 @@
 /**
  * Tab 2: CAN Command Sending Page
  *
- * Custom frame sending, LoRa configuration, and bus monitor
- * with heartbeat frame display and LoRa response parsing.
+ * Custom frame sending, LoRa configuration, and bus monitor.
+ * LoRa command codes match device firmware mod-can.h exactly:
+ *   SET_MODE=0x01, QUERY_MODE=0x02, SET_CH1=0x03, QUERY_CH1=0x04,
+ *   SET_CH2=0x05, QUERY_CH2=0x06, QUERY_NID=0x07, SET_NID=0x08,
+ *   QUERY_GWID=0x09, SET_GWID=0x0A, QUERY_PNUM=0x0B, SET_PNUM=0x0C
  */
 #include <windows.h>
 #include <commctrl.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "resource.h"
@@ -26,7 +28,7 @@
 #define CANID_LORA_RX         0x105
 #define CANID_LORA_TX         0x106
 
-/* LoRa config commands (from mod-can.h) */
+/* LoRa config commands – match device mod-can.h exactly */
 #define LORA_CMD_SET_MODE     0x01
 #define LORA_CMD_QUERY_MODE   0x02
 #define LORA_CMD_SET_CH1      0x03
@@ -199,7 +201,7 @@ typedef struct {
     int      is_tx;
 } FrameInfo;
 
-/* Frame callback -- called from monitor thread */
+/* Frame callback -- called from dispatcher read thread */
 static void CanFrameCb(uint32_t id, const uint8_t *data,
                         int dlc, int is_tx, void *context)
 {
@@ -269,7 +271,16 @@ static int ParseHexData(const wchar_t *str, uint8_t *out, int maxBytes)
     return count;
 }
 
-/* Send a LoRa config CAN frame to device */
+/**
+ * Send a LoRa config CAN frame to device.
+ * Frame format matches can.c / mod-can.h:
+ *   SET_MODE(0x01): data[0]=0x01, data[1]=prot[7:4]|mode[3:0]
+ *   SET_CH1(0x03):  data[0]=0x03, data[1]=spd, data[2-3]=ch(BE16)
+ *   SET_CH2(0x05):  data[0]=0x05, data[1]=spd, data[2-3]=ch(BE16)
+ *   SET_PNUM(0x0C): data[0]=0x0C, data[1]=pnum
+ *   SET_NID(0x08):  data[0]=0x08, data[4-7]=nid(BE32)
+ *   SET_GWID(0x0A): data[0]=0x0A, data[4-7]=gwid(BE32)
+ */
 static void SendLoraCommand(TAB_CMD_DATA *pData, uint8_t cmd)
 {
     if (!pData->canCmd || pData->channel == CAN_HAL_INVALID_HANDLE) return;
@@ -479,7 +490,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         SendMessageW(pData->hComboMode, CB_SETCURSEL, 1, 0);
         cy += lineH;
 
-        /* Row 2: CH1 (SPD + CH, alone) */
+        /* Row 2: CH1 (SPD + CH) */
         CreateLabel(hwnd, hInst, -1, cx, cy + 3, llW, 22,
             L"CH1:", pData->hFont);
         CreateLabel(hwnd, hInst, -1, cx + llW + 4, cy + 3, 56, 22,
@@ -506,7 +517,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
             L"(4100~5100KHz)", pData->hFont);
         cy += lineH;
 
-        /* Row 3: CH2 (SPD + CH, alone) */
+        /* Row 3: CH2 (SPD + CH) */
         CreateLabel(hwnd, hInst, -1, cx, cy + 3, llW, 22,
             L"CH2:", pData->hFont);
         CreateLabel(hwnd, hInst, -1, cx + llW + 4, cy + 3, 56, 22,
@@ -555,7 +566,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         SendMessageW(pData->hEditGwid, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
         cy += lineH;
 
-        /* Row 5: NID / GWID */
+        /* Row 5: NID */
         CreateLabel(hwnd, hInst, -1, cx, cy + 3, llW, 22,
             L"NID:", pData->hFont);
         pData->hEditNid = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"00000000",
@@ -637,7 +648,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         SendMessageW(pData->hLabelLoraStatus, WM_SETFONT,
             (WPARAM)pData->hFont, TRUE);
 
-                /* ========== Group 3: Bus Monitor (full width, bottom) ========== */
+        /* ========== Group 3: Bus Monitor (full width, bottom) ========== */
         int grp3X = margin;
         int grp3Y = grp1Y + grp1H + 10;
         int grp3W = WINDOW_WIDTH - 2 * margin;
@@ -728,6 +739,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
             return 0;
         }
 
+        /* Query all LoRa config */
         case IDC_BUTTON_LORA_QUERY_CFG:
             SendLoraCommand(pData, LORA_CMD_QUERY_MODE);
             SendLoraCommand(pData, LORA_CMD_QUERY_CH1);
@@ -774,7 +786,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         }
         break;
 
-    /* ---- CAN frame received (from monitor thread via PostMessage) ---- */
+    /* ---- CAN frame received (from dispatcher via PostMessage) ---- */
     case WM_CAN_FRAME_RECEIVED: {
         FrameInfo *fi = (FrameInfo *)lParam;
         if (fi) {
@@ -783,29 +795,24 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
             /* Parse LoRa response (0x106) */
             if (!fi->is_tx && fi->id == CANID_LORA_TX && fi->dlc > 0) {
                 uint8_t cmd;
-                if (!LoraCmdQueue_Pop(pData, &cmd)) break;
+                if (!LoraCmdQueue_Pop(pData, &cmd)) { free(fi); return 0; }
 
                 wchar_t status[128];
                 int ok = (fi->data[0] == 0x00);
 
                 switch (cmd) {
                 case LORA_CMD_QUERY_MODE:
+                case LORA_CMD_SET_MODE:
                     if (ok && fi->dlc > 1) {
                         int prot = fi->data[1] >> 4;
                         int mode = fi->data[1] & 0x0F;
                         wsprintfW(status,
-                            L"查询成功: prot=%d mode=%d", prot, mode);
+                            L"模式: prot=%d mode=%d", prot, mode);
                         SendMessageW(pData->hComboProt, CB_SETCURSEL, prot, 0);
                         SendMessageW(pData->hComboMode, CB_SETCURSEL, mode, 0);
                     } else if (!ok) {
-                        wcscpy(status, L"查询失败");
+                        wcscpy(status, L"模式操作失败");
                     }
-                    break;
-                case LORA_CMD_SET_MODE:
-                    if (ok)
-                        wcscpy(status, L"设置模式成功");
-                    else
-                        wcscpy(status, L"设置模式失败");
                     break;
                 case LORA_CMD_QUERY_CH1:
                 case LORA_CMD_SET_CH1:
@@ -939,7 +946,7 @@ HWND TabCanCommand_Create(HWND hParent, HINSTANCE hInst, CanCommand *cmd)
         wc.style         = CS_HREDRAW | CS_VREDRAW;
         wc.lpfnWndProc   = TabCanCommand_WndProc;
         wc.hInstance     = hInst;
-        wc.hCursor       = LoadCursorW(NULL, IDC_ARROW);
+        wc.hCursor       = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
         wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
         wc.lpszClassName = TAB_CMD_CLASS;
         RegisterClassExW(&wc);

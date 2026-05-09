@@ -500,7 +500,7 @@ HWND TabNetTerminal_Create(HWND hParent, HINSTANCE hInst, NetTerminal *netTerm)
         wc.style         = CS_HREDRAW | CS_VREDRAW;
         wc.lpfnWndProc   = TabNetTerminal_WndProc;
         wc.hInstance     = hInst;
-        wc.hCursor       = LoadCursorW(NULL, IDC_ARROW);
+        wc.hCursor       = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
         wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
         wc.lpszClassName = TAB_NET_CLASS;
         RegisterClassExW(&wc);

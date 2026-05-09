@@ -1,4 +1,12 @@
+/**
+ * CAN Command – frame sending + bus monitoring via CanDispatcher.
+ *
+ * Monitoring no longer owns a reader thread.
+ * Instead it subscribes to the shared CanDispatcher, which is the
+ * sole owner of the CAN read thread.
+ */
 #include "can_command.h"
+#include "can_dispatcher.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -13,45 +21,36 @@ static const int g_defaultCommandCount =
 
 struct CanCommand {
     CanHal           *hal;
+    CanDispatcher    *disp;
     int               channel;
     CanFrameCallback  frameCallback;
     void*             frameCallbackCtx;
-    HANDLE            hMonitorThread;
-    volatile int      monitorRunning;
+    volatile int      monitoring;    /* subscribed to dispatcher */
     CanQuickCommand   quickCommands[MAX_QUICK_COMMANDS];
     int               quickCommandCount;
 };
 
-static DWORD WINAPI MonitorThread(LPVOID param)
+/* Dispatcher callback – converts CanHalFrame to user-level callback */
+static void DispFrameCallback(const CanHalFrame *frame, void *ctx)
 {
-    CanCommand* cmd = (CanCommand*)param;
-    CanHalFrame frame;
-
-    while (cmd->monitorRunning) {
-        int result = CanHal_Read(cmd->hal, &frame, 10);
-        if (result) {
-            if (cmd->frameCallback) {
-                cmd->frameCallback(frame.id, frame.data, frame.dlc, 0,
-                                   cmd->frameCallbackCtx);
-            }
-        } else {
-            Sleep(1);
-        }
+    CanCommand* cmd = (CanCommand*)ctx;
+    if (cmd->frameCallback && cmd->monitoring) {
+        cmd->frameCallback(frame->id, frame->data, frame->dlc, 0,
+                           cmd->frameCallbackCtx);
     }
-    return 0;
 }
 
-CanCommand* CanCommand_Create(CanHal *hal)
+CanCommand* CanCommand_Create(CanHal *hal, CanDispatcher *disp)
 {
     CanCommand* cmd = (CanCommand*)calloc(1, sizeof(CanCommand));
     if (!cmd) return NULL;
 
     cmd->hal              = hal;
+    cmd->disp             = disp;
     cmd->channel          = CAN_HAL_INVALID_HANDLE;
     cmd->frameCallback    = NULL;
     cmd->frameCallbackCtx = NULL;
-    cmd->hMonitorThread   = NULL;
-    cmd->monitorRunning   = 0;
+    cmd->monitoring       = 0;
 
     CanCommand_SetQuickCommands(cmd, g_defaultCommands, g_defaultCommandCount);
 
@@ -68,6 +67,16 @@ void CanCommand_Destroy(CanCommand* cmd)
 void CanCommand_SetChannel(CanCommand* cmd, int channel)
 {
     if (cmd) cmd->channel = channel;
+}
+
+void CanCommand_ReplaceHal(CanCommand *cmd, CanHal *hal, CanDispatcher *disp)
+{
+    if (!cmd) return;
+    int wasMonitoring = cmd->monitoring;
+    if (wasMonitoring)
+        CanCommand_StopMonitor(cmd);
+    cmd->hal  = hal;
+    cmd->disp = disp;
 }
 
 int CanCommand_SendFrame(CanCommand* cmd, uint32_t can_id,
@@ -129,23 +138,15 @@ void CanCommand_SetFrameCallback(CanCommand* cmd, CanFrameCallback cb,
 
 void CanCommand_StartMonitor(CanCommand* cmd)
 {
-    if (!cmd || cmd->monitorRunning) return;
-
-    cmd->monitorRunning = 1;
-    cmd->hMonitorThread = CreateThread(NULL, 0, MonitorThread, cmd,
-                                       0, NULL);
-    if (!cmd->hMonitorThread)
-        cmd->monitorRunning = 0;
+    if (!cmd || cmd->monitoring || !cmd->disp) return;
+    cmd->monitoring = 1;
+    CanDisp_Subscribe(cmd->disp, DispFrameCallback, cmd);
 }
 
 void CanCommand_StopMonitor(CanCommand* cmd)
 {
-    if (!cmd || !cmd->monitorRunning) return;
-
-    cmd->monitorRunning = 0;
-    if (cmd->hMonitorThread) {
-        WaitForSingleObject(cmd->hMonitorThread, 3000);
-        CloseHandle(cmd->hMonitorThread);
-        cmd->hMonitorThread = NULL;
-    }
+    if (!cmd || !cmd->monitoring) return;
+    cmd->monitoring = 0;
+    if (cmd->disp)
+        CanDisp_Unsubscribe(cmd->disp, DispFrameCallback, cmd);
 }

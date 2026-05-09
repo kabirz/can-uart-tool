@@ -7,7 +7,6 @@
 #include <windows.h>
 #include <commctrl.h>
 #include <commdlg.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "resource.h"
@@ -21,11 +20,7 @@
 #define TRANSPORT_MODE_CAN    0
 #define TRANSPORT_MODE_UART   1
 
-/* CAN baud rate table */
-static const int BAUD_RATES[] = {
-    CAN_HAL_BAUD_10K, CAN_HAL_BAUD_20K, CAN_HAL_BAUD_50K, CAN_HAL_BAUD_100K,
-    CAN_HAL_BAUD_125K, CAN_HAL_BAUD_250K, CAN_HAL_BAUD_500K, CAN_HAL_BAUD_1M
-};
+/* CAN baud rate display names */
 static const wchar_t *baudNames[] = {
     L"10K", L"20K", L"50K", L"100K",
     L"125K", L"250K", L"500K", L"1000K"
@@ -129,20 +124,34 @@ static void AppendLog(TAB_UPGRADE_DATA *pData, const char *msg)
     free(wstr);
 }
 
-/* Static trampoline so CanManager/UartManager can call AppendLog */
-static TAB_UPGRADE_DATA *g_ActiveDataForLog = NULL;
+/* Static trampoline – uses PostMessage for thread safety */
+static HWND g_hwndForLog = NULL;
 
-static void LogCallback(const char *msg)
+static void LogCallback(const char *msg, void *ctx)
 {
-    if (g_ActiveDataForLog)
-        AppendLog(g_ActiveDataForLog, msg);
+    (void)ctx;
+    if (!g_hwndForLog) return;
+    char *copy = _strdup(msg);
+    if (copy)
+        PostMessage(g_hwndForLog, WM_LOG_MESSAGE, 0, (LPARAM)copy);
 }
 
-static void ProgressCallback(int percent)
+static void ProgressCallback(int percent, void *ctx)
 {
-    /* Forward progress to the active page via PostMessage */
-    if (g_ActiveDataForLog && g_ActiveDataForLog->hUpdatingDialog)
-        PostMessage(g_ActiveDataForLog->hUpdatingDialog, WM_UPDATE_PROGRESS, percent, 0);
+    (void)ctx;
+    if (g_hwndForLog)
+        PostMessage(g_hwndForLog, WM_UPDATE_PROGRESS, percent, 0);
+}
+
+/* UART-specific wrappers matching UartManager callback signatures */
+static void UartLogWrapper(const char *msg)
+{
+    LogCallback(msg, NULL);
+}
+
+static void UartProgressWrapper(int percent)
+{
+    ProgressCallback(percent, NULL);
 }
 
 /* Enable/disable the Flash button based on connection, file, and update state */
@@ -166,7 +175,7 @@ static void GetDeviceList(TAB_UPGRADE_DATA *pData)
     SendMessageW(hChannel, CB_RESETCONTENT, 0, 0);
 
     if (pData->transportMode == TRANSPORT_MODE_CAN) {
-        CanManager_SetCallback(pData->canMgr, LogCallback);
+        CanManager_SetCallback(pData->canMgr, LogCallback, NULL);
         pData->channelCount = CanManager_DetectDevice(pData->canMgr, pData->channels, MAX_DEVICES);
 
         const char *adapterName = "";
@@ -184,7 +193,7 @@ static void GetDeviceList(TAB_UPGRADE_DATA *pData)
             pData->channelCount++;
         }
     } else {
-        UartManager_SetCallback(pData->uartMgr, LogCallback);
+        UartManager_SetCallback(pData->uartMgr, UartLogWrapper);
         pData->serialPortCount = UartManager_EnumPorts(pData->uartMgr, pData->serialPorts, MAX_SERIAL_PORTS);
 
         for (int i = 0; i < pData->serialPortCount; i++) {
@@ -215,7 +224,6 @@ static void UpdateTransportModeUI(TAB_UPGRADE_DATA *pData)
     }
     EnableWindow(pData->hBtnRefresh, !pData->isConnected);
 
-    g_ActiveDataForLog = pData;
     GetDeviceList(pData);
 }
 
@@ -232,10 +240,10 @@ static DWORD WINAPI FirmwareUpdateThread(LPVOID lpParam)
 
     int success = 0;
     if (pData->transportMode == TRANSPORT_MODE_CAN) {
-        CanManager_SetProgressCallback(pData->canMgr, ProgressCallback);
+        CanManager_SetProgressCallback(pData->canMgr, ProgressCallback, NULL);
         success = CanManager_FirmwareUpgrade(pData->canMgr, params->fileName, params->testMode);
     } else {
-        UartManager_SetProgressCallback(pData->uartMgr, ProgressCallback);
+        UartManager_SetProgressCallback(pData->uartMgr, UartProgressWrapper);
         success = UartManager_FirmwareUpgrade(pData->uartMgr, params->fileName, params->testMode);
     }
     PostMessage(params->hwnd, WM_UPDATE_COMPLETE, success, 0);
@@ -498,7 +506,7 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
         pData->isConnected   = 0;
         pData->isUpdating    = 0;
 
-        g_ActiveDataForLog = pData;
+        g_hwndForLog = hwnd;
         UpdateTransportModeUI(pData);
         UpdateFlashButtonState(pData);
 
@@ -538,7 +546,7 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
             return 0;
 
         case IDC_BUTTON_REFRESH:
-            g_ActiveDataForLog = pData;
+            g_hwndForLog = hwnd;
             GetDeviceList(pData);
             return 0;
 
@@ -550,18 +558,9 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
                     return 0;
                 }
                 int adapter_idx = (int)SendMessageW(pData->hComboAdapter, CB_GETCURSEL, 0, 0);
-                CanHal *newHal = CanHal_Create(adapter_idx);
-                if (newHal) {
-                    CanManager *newMgr = CanManager_Create(newHal);
-                    if (newMgr) {
-                        CanManager_Destroy(pData->canMgr);
-                        pData->canMgr = newMgr;
-                        g_ActiveDataForLog = pData;
-                        GetDeviceList(pData);
-                    } else {
-                        CanHal_Destroy(newHal);
-                    }
-                }
+                /* Delegate adapter switch to main window (owns global objects) */
+                if (pData->hNotifyWnd)
+                    PostMessage(pData->hNotifyWnd, WM_ADAPTER_CHANGED, adapter_idx, 0);
             }
             return 0;
 
@@ -723,7 +722,7 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
             wcscpy(params->fileName, fileName);
             params->testMode = testMode;
 
-            g_ActiveDataForLog = pData;
+            g_hwndForLog = hwnd;
 
             DWORD threadId;
             HANDLE hThread = CreateThread(NULL, 0, FirmwareUpdateThread, params, 0, &threadId);
@@ -781,6 +780,22 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
         return 0;
     }
 
+    /* ---- Thread-safe log message (from firmware upgrade thread) ---- */
+    case WM_LOG_MESSAGE: {
+        char *msg = (char *)lParam;
+        if (msg) {
+            AppendLog(pData, msg);
+            free(msg);
+        }
+        return 0;
+    }
+
+    /* ---- Adapter changed: refresh device list ---- */
+    case WM_ADAPTER_CHANGED:
+        g_hwndForLog = hwnd;
+        GetDeviceList(pData);
+        return 0;
+
     /* ---- Cleanup ---- */
     case WM_DESTROY:
         if (pData) {
@@ -819,7 +834,7 @@ HWND TabCanUpgrade_Create(HWND hParent, HINSTANCE hInst,
         wc.style         = CS_HREDRAW | CS_VREDRAW;
         wc.lpfnWndProc   = TabCanUpgrade_WndProc;
         wc.hInstance     = hInst;
-        wc.hCursor       = LoadCursorW(NULL, IDC_ARROW);
+        wc.hCursor       = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
         wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
         wc.lpszClassName = TAB_UPGRADE_CLASS;
         RegisterClassExW(&wc);
