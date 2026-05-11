@@ -145,6 +145,15 @@ static void cb_on_net_params(void *ud, const char *ip,
     if (mask)    strncpy(msg->mask, mask, 63);
     if (gateway) strncpy(msg->gateway, gateway, 63);
     PostMessageW(tabs->hCfgTab, WM_LORA_NET_PARAMS, 0, (LPARAM)msg);
+    if (tabs->hDataTab) {
+        LoraNetParamsMsg *msg2 = (LoraNetParamsMsg *)calloc(1, sizeof(LoraNetParamsMsg));
+        if (msg2) {
+            memcpy(msg2->ip, msg->ip, 64);
+            memcpy(msg2->mask, msg->mask, 64);
+            memcpy(msg2->gateway, msg->gateway, 64);
+            PostMessageW(tabs->hDataTab, WM_LORA_NET_PARAMS, 0, (LPARAM)msg2);
+        }
+    }
 }
 
 static void cb_on_log(void *ud, const char *message)

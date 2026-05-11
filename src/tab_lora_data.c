@@ -32,6 +32,13 @@ typedef struct {
     uint8_t data[1]; /* variable length */
 } LoraHexDumpMsg;
 
+/* WM_LORA_NET_PARAMS (lParam = heap-allocated, receiver frees) */
+typedef struct {
+    char ip[64];
+    char mask[64];
+    char gateway[64];
+} LoraNetParamsMsg;
+
 /* CSV test entry */
 #define MAX_CSV_ENTRIES  50000
 typedef struct {
@@ -522,6 +529,18 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
             EnableWindow(pData->hBtnConnect, FALSE);
             EnableWindow(pData->hBtnDisconnect, TRUE);
             break;
+        }
+        return 0;
+    }
+
+    /* ---- Network params (from SDK via PostMessage) ---- */
+    case WM_LORA_NET_PARAMS: {
+        LoraNetParamsMsg *msg = (LoraNetParamsMsg *)lParam;
+        if (msg) {
+            wchar_t wbuf[128];
+            MultiByteToWideChar(CP_ACP, 0, msg->ip, -1, wbuf, 128);
+            SetWindowTextW(pData->hEditIp, wbuf);
+            free(msg);
         }
         return 0;
     }
