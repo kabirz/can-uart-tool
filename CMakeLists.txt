@@ -48,3 +48,8 @@ elseif(MSVC)
 endif()
 
 target_include_directories(can-uart-tool PRIVATE include)
+
+# --- LoRa SDK (static library for internal use, DLL for customers) ---
+add_subdirectory(loralib)
+
+target_link_libraries(can-uart-tool PRIVATE lora_sdk_static)
