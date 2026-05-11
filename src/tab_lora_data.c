@@ -33,13 +33,12 @@ typedef struct {
 } LoraHexDumpMsg;
 
 /* CSV test entry */
-#define MAX_CSV_ENTRIES  2000
+#define MAX_CSV_ENTRIES  50000
 typedef struct {
-    SYSTEMTIME timestamp;
-    uint32_t   nid;
-    uint8_t    type;
-    uint8_t    data[64];
-    int        data_len;
+    uint32_t nid;
+    uint16_t index;
+    uint32_t dev_ts; /* device uptime ms */
+    char time[32];   /* HH:MM:SS.mmm */
 } CsvTestEntry;
 
 /* ------------------------------------------------------------------ */
@@ -340,7 +339,7 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
 
         /* Left: Telemetry (fixed width ~280px) */
         int teleW = 280;
-        pData->hGrpTelemetry = CreateWindowExW(0, L"BUTTON", L"遥测",
+        pData->hGrpTelemetry = CreateWindowExW(0, L"BUTTON", L"手柄数据",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             margin, grp2Y, teleW, grp2H, hwnd, NULL, hInst, NULL);
         SendMessageW(pData->hGrpTelemetry, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
@@ -551,83 +550,54 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
 
         switch (type) {
         case 0x01: { /* HANDLER / Scanner merged data */
-            if (msg->len >= 9 && msg->len < LORA_SCANNER_FRAME_SIZE) {
-                /* Short telemetry: X(2B BE) + Y(2B BE) + btn(1B) */
-                int16_t x = (int16_t)((uint16_t)msg->data[1] << 8 | msg->data[2]);
-                int16_t y = (int16_t)((uint16_t)msg->data[3] << 8 | msg->data[4]);
-                uint8_t btn = msg->data[5];
+            /* body = data[1..], body_len = len-1 */
+            uint16_t body_len = msg->len - 1;
+            const uint8_t *body = msg->data + 1;
+
+            if (body_len == 8 &&
+                body[5] == 0xFF && body[6] == 0xFF && body[7] == 0xFF) {
+                /* Telemetry: X(2B BE) + Y(2B BE) + btn(1B) + 0xFF*3 */
+                int16_t x = (int16_t)((uint16_t)body[0] << 8 | body[1]);
+                int16_t y = (int16_t)((uint16_t)body[2] << 8 | body[3]);
+                uint8_t btn = body[4] & 0x01;
 
                 wchar_t xBuf[16], yBuf[16];
-                wsprintfW(xBuf, L"%.1f", x / 10.0);
-                wsprintfW(yBuf, L"%.1f", y / 10.0);
+                wsprintfW(xBuf, L"%d", x);
+                wsprintfW(yBuf, L"%d", y);
                 SetWindowTextW(pData->hXText, xBuf);
                 SetWindowTextW(pData->hYText, yBuf);
                 SetWindowTextW(pData->hBtnText, btn ? L"松开" : L"按下");
 
-                typeStr = L"遥测";
-                wsprintfW(dataStr, L"X=%s Y=%s btn=%d", xBuf, yBuf, btn);
-            } else if (msg->len >= LORA_SCANNER_FRAME_SIZE) {
-                /* Merged scanner data (20 bytes) */
-                lora_scanner_data_t scanner;
-                if (lora_scanner_parse(msg->data, msg->len, &scanner) == 0) {
-                    wchar_t xBuf[16], yBuf[16];
-                    wsprintfW(xBuf, L"%.1f",
-                              (double)((int16_t)((uint16_t)msg->data[1] << 8 | msg->data[2])) / 10.0);
-                    wsprintfW(yBuf, L"%.1f",
-                              (double)((int16_t)((uint16_t)msg->data[3] << 8 | msg->data[4])) / 10.0);
+                typeStr = L"Telemetry";
+                wsprintfW(dataStr, L"X=%d Y=%d Btn=%s",
+                          x, y, btn ? L"Released" : L"Pressed");
 
-                    /* Update telemetry display if short frame data present */
-                    if (msg->len >= 9) {
-                        int16_t tx = (int16_t)((uint16_t)msg->data[1] << 8 | msg->data[2]);
-                        int16_t ty = (int16_t)((uint16_t)msg->data[3] << 8 | msg->data[4]);
-                        uint8_t tbtn = msg->data[5];
-                        wchar_t txBuf[16], tyBuf[16];
-                        wsprintfW(txBuf, L"%.1f", tx / 10.0);
-                        wsprintfW(tyBuf, L"%.1f", ty / 10.0);
-                        SetWindowTextW(pData->hXText, txBuf);
-                        SetWindowTextW(pData->hYText, tyBuf);
-                        SetWindowTextW(pData->hBtnText, tbtn ? L"松开" : L"按下");
-                    }
-
-                    typeStr = L"扫描仪";
-                    wsprintfW(dataStr,
-                        L"ov=%d ls=%u x=%d y=%d z=%d flags=%02X",
-                        scanner.overbreak, scanner.laser,
-                        scanner.coord_x, scanner.coord_y, scanner.coord_z,
-                        msg->data[1]);
-                } else {
-                    typeStr = L"数据";
-                    /* Format as hex */
-                    int pos = 0;
-                    for (int i = 0; i < msg->len && pos < 200; i++)
-                        pos += wsprintfW(dataStr + pos, L"%02X ", msg->data[i]);
+                /* 收到遥测后回发模拟扫描仪合并帧 (同 tools) */
+                if (pData->sdk) {
+                    lora_scanner_data_t scan = {
+                        .overbreak_valid = 1,
+                        .laser_valid     = 1,
+                        .coord_z_valid   = 1,
+                        .coord_xy_valid  = 1,
+                        .overbreak = (int16_t)(rand() % 200 - 100),
+                        .laser     = (uint32_t)(rand() % 50000 + 1000),
+                        .coord_x   = (int32_t)(rand() % 10000 - 5000),
+                        .coord_y   = (int32_t)(rand() % 10000 - 5000),
+                        .coord_z   = (int32_t)(rand() % 5000),
+                    };
+                    uint8_t scan_buf[LORA_SCANNER_FRAME_SIZE];
+                    lora_scanner_pack(scan_buf, sizeof(scan_buf), &scan);
+                    lora_sdk_send_frame(pData->sdk, msg->nid,
+                                        scan_buf, sizeof(scan_buf));
+                    pData->txCount++;
+                    UpdateCounters(pData);
                 }
-            } else {
-                typeStr = L"遥测(短)";
-                int pos = 0;
-                for (int i = 0; i < msg->len && pos < 200; i++)
-                    pos += wsprintfW(dataStr + pos, L"%02X ", msg->data[i]);
-            }
-
-            /* Record CSV entry */
-            if (pData->csvCount < MAX_CSV_ENTRIES) {
-                SYSTEMTIME st;
-                GetLocalTime(&st);
-                CsvTestEntry *e = &pData->csvEntries[pData->csvCount++];
-                e->timestamp = st;
-                e->nid = msg->nid;
-                e->type = type;
-                e->data_len = msg->len > 64 ? 64 : msg->len;
-                memcpy(e->data, msg->data, e->data_len);
             }
             break;
         }
 
         case 0x02: { /* TEST: echo frame back */
             typeStr = L"测试";
-            int pos = 0;
-            for (int i = 0; i < msg->len && pos < 200; i++)
-                pos += wsprintfW(dataStr + pos, L"%02X ", msg->data[i]);
 
             /* Echo back */
             if (pData->sdk) {
@@ -637,16 +607,48 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
                 UpdateCounters(pData);
             }
 
-            /* Record CSV entry */
-            if (pData->csvCount < MAX_CSV_ENTRIES) {
-                SYSTEMTIME st;
-                GetLocalTime(&st);
-                CsvTestEntry *e = &pData->csvEntries[pData->csvCount++];
-                e->timestamp = st;
-                e->nid = msg->nid;
-                e->type = type;
-                e->data_len = msg->len > 64 ? 64 : msg->len;
-                memcpy(e->data, msg->data, e->data_len);
+            /* body = data[1..], body_len = len-1 */
+            uint16_t body_len = msg->len - 1;
+            const uint8_t *body = msg->data + 1;
+
+            if (body_len >= 6) {
+                /* New format: [index 2B BE][timestamp 4B BE] */
+                uint16_t idx = (uint16_t)((uint16_t)body[0] << 8 | body[1]);
+                uint32_t ts  = (uint32_t)((uint32_t)body[2] << 24 |
+                                          (uint32_t)body[3] << 16 |
+                                          (uint32_t)body[4] << 8 | body[5]);
+                wsprintfW(dataStr, L"idx=%u ts=%u ms -> echo", idx, ts);
+
+                /* Record test entry for CSV */
+                if (pData->csvCount < MAX_CSV_ENTRIES) {
+                    CsvTestEntry *e = &pData->csvEntries[pData->csvCount++];
+                    e->nid = msg->nid;
+                    e->index = idx;
+                    e->dev_ts = ts;
+                    SYSTEMTIME st;
+                    GetLocalTime(&st);
+                    snprintf(e->time, sizeof(e->time), "%02d:%02d:%02d.%03d",
+                             st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+                }
+            } else if (body_len >= 2) {
+                uint16_t idx = (uint16_t)((uint16_t)body[0] << 8 | body[1]);
+                wsprintfW(dataStr, L"index=%u -> echo", idx);
+
+                if (pData->csvCount < MAX_CSV_ENTRIES) {
+                    CsvTestEntry *e = &pData->csvEntries[pData->csvCount++];
+                    e->nid = msg->nid;
+                    e->index = idx;
+                    e->dev_ts = 0;
+                    SYSTEMTIME st;
+                    GetLocalTime(&st);
+                    snprintf(e->time, sizeof(e->time), "%02d:%02d:%02d.%03d",
+                             st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+                }
+            } else {
+                wsprintfW(dataStr, L"TEST (short)");
+                int pos = 0;
+                for (int i = 0; i < msg->len && pos < 200; i++)
+                    pos += wsprintfW(dataStr + pos, L"%02X ", msg->data[i]);
             }
             break;
         }
@@ -853,24 +855,13 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
                 fprintf(fp, "\xEF\xBB\xBF");
 
                 /* CSV header */
-                fprintf(fp, "时间,NID,类型,数据长度,数据(Hex)\r\n");
+                fprintf(fp, "Index,Time,NID,DevTimestamp_ms\r\n");
 
                 /* CSV rows */
                 for (int i = 0; i < pData->csvCount; i++) {
                     CsvTestEntry *e = &pData->csvEntries[i];
-
-                    fprintf(fp, "%04d-%02d-%02d %02d:%02d:%02d.%03d,",
-                            e->timestamp.wYear, e->timestamp.wMonth,
-                            e->timestamp.wDay, e->timestamp.wHour,
-                            e->timestamp.wMinute, e->timestamp.wSecond,
-                            e->timestamp.wMilliseconds);
-                    fprintf(fp, "0x%08X,", e->nid);
-                    fprintf(fp, "0x%02X,", e->type);
-                    fprintf(fp, "%d,", e->data_len);
-
-                    for (int j = 0; j < e->data_len; j++)
-                        fprintf(fp, "%02X ", e->data[j]);
-                    fprintf(fp, "\r\n");
+                    fprintf(fp, "%u,%s,%08X,%u\n",
+                            e->index, e->time, e->nid, e->dev_ts);
                 }
 
                 fclose(fp);
@@ -887,6 +878,8 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         case IDC_LORA_TEST_CHECK: {
             pData->testMode = (SendMessageW(pData->hTestCheck,
                                              BM_GETCHECK, 0, 0) == BST_CHECKED) ? 1 : 0;
+            if (pData->sdk)
+                lora_sdk_set_test_flag(pData->sdk, pData->testMode);
             return 0;
         }
 

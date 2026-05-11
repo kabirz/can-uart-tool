@@ -215,7 +215,7 @@ static void AppendLog(TAB_LORA_CFG *pData, const char *text)
     SendMessageA(pData->hLogEdit, EM_SCROLLCARET, 0, 0);
 }
 
-/* Parse AT response and update corresponding controls */
+/* Parse AT response and update corresponding controls — matches tools' lora_udp.c */
 static void ParseAtResponse(TAB_LORA_CFG *pData, const char *resp)
 {
     if (!resp) return;
@@ -228,7 +228,7 @@ static void ParseAtResponse(TAB_LORA_CFG *pData, const char *resp)
     p = strstr(resp, "+NWMODE:");
     if (p) {
         if (sscanf(p + 8, "%d", &val) == 1) {
-            if (val >= 0 && val <= 2)
+            if (val >= 0 && val <= 1)
                 SendMessageW(pData->hComboNwmode, CB_SETCURSEL, val, 0);
         }
     }
@@ -257,11 +257,12 @@ static void ParseAtResponse(TAB_LORA_CFG *pData, const char *resp)
         const char *valStart = p + 6;
         while (*valStart == ' ') valStart++;
         MultiByteToWideChar(CP_ACP, 0, valStart, -1, wbuf, 128);
-        /* Trim trailing whitespace / newline */
         for (wchar_t *c = wbuf; *c; c++) {
             if (*c == L'\r' || *c == L'\n' || *c == L' ') { *c = L'\0'; break; }
         }
-        SetWindowTextW(pData->hUpwidText, wbuf);
+        wchar_t txt[64];
+        wsprintfW(txt, L"UPWID: %s", wbuf);
+        SetWindowTextW(pData->hUpwidText, txt);
     }
 
     /* +DHCP: */
@@ -280,7 +281,7 @@ static void ParseAtResponse(TAB_LORA_CFG *pData, const char *resp)
     p = strstr(resp, "+OPTION:");
     if (p) {
         if (sscanf(p + 8, "%d", &val) == 1) {
-            if (val >= 0 && val <= 1)
+            if (val >= 0 && val <= 4)
                 SendMessageW(pData->hComboOption, CB_SETCURSEL, val, 0);
         }
     }
@@ -309,35 +310,100 @@ static void ParseAtResponse(TAB_LORA_CFG *pData, const char *resp)
         SetWindowTextW(pData->hCsqText, wbuf);
     }
 
-    /* +CH1: or +CH2: — extract frequency */
-    p = strstr(resp, "+CH1:");
-    if (!p) p = strstr(resp, "+CH2:");
-    if (p) {
-        if (sscanf(p + 5, "%d", &val) == 1) {
-            /* Find freq combo index: freq values are 4100, 4200, ... 5100 */
-            int idx = (val - 4100) / 100;
-            if (idx >= 0 && idx <= 10)
-                SendMessageW(pData->hComboFreq, CB_SETCURSEL, idx, 0);
+    /* +GWIP: — update IP edit */
+    {
+        char v[64];
+        const char *gp = strstr(resp, "+GWIP:");
+        if (gp) {
+            gp += 6;
+            int i = 0;
+            while (gp[i] && gp[i] != '\r' && gp[i] != '\n' && gp[i] != ' ' && i < 63) i++;
+            if (i > 0 && strncmp(gp, "OK", 2) != 0) {
+                MultiByteToWideChar(CP_ACP, 0, gp, i, wbuf, 64);
+                wbuf[i] = L'\0';
+                SetWindowTextW(pData->hEditIp, wbuf);
+            }
         }
     }
 
-    /* +SPD: */
-    p = strstr(resp, "+SPD:");
-    if (p) {
-        if (sscanf(p + 5, "%d", &val) == 1) {
-            int idx = val - 4;
-            if (idx >= 0 && idx <= 7)
-                SendMessageW(pData->hComboSpd, CB_SETCURSEL, idx, 0);
+    /* +GW: — update gateway edit */
+    {
+        const char *gp = strstr(resp, "+GW:");
+        if (gp) {
+            gp += 4;
+            int i = 0;
+            while (gp[i] && gp[i] != '\r' && gp[i] != '\n' && gp[i] != ' ' && i < 63) i++;
+            if (i > 0 && strncmp(gp, "OK", 2) != 0) {
+                MultiByteToWideChar(CP_ACP, 0, gp, i, wbuf, 64);
+                wbuf[i] = L'\0';
+                SetWindowTextW(pData->hEditGw, wbuf);
+            }
         }
     }
 
-    /* +PWR: */
-    p = strstr(resp, "+PWR:");
-    if (p) {
-        if (sscanf(p + 5, "%d", &val) == 1) {
-            int idx = val - 24;
-            if (idx >= 0 && idx <= 6)
-                SendMessageW(pData->hComboPwr, CB_SETCURSEL, idx, 0);
+    /* +MASK: — update mask edit */
+    {
+        const char *mp = strstr(resp, "+MASK:");
+        if (mp) {
+            mp += 6;
+            int i = 0;
+            while (mp[i] && mp[i] != '\r' && mp[i] != '\n' && mp[i] != ' ' && i < 63) i++;
+            if (i > 0 && strncmp(mp, "OK", 2) != 0) {
+                MultiByteToWideChar(CP_ACP, 0, mp, i, wbuf, 64);
+                wbuf[i] = L'\0';
+                SetWindowTextW(pData->hEditMask, wbuf);
+            }
+        }
+    }
+
+    /* +CH<n>:<freq> — update freq combo */
+    {
+        const char *cp = strstr(resp, "+CH");
+        if (cp && cp[3] >= '0' && cp[3] <= '9') {
+            const char *colon = strchr(cp + 3, ':');
+            if (colon) {
+                const char *v = colon + 1;
+                if (strncmp(v, "OK", 2) != 0) {
+                    int freq = atoi(v);
+                    int idx = (freq - 4100) / 100;
+                    if (idx >= 0 && idx <= 10)
+                        SendMessageW(pData->hComboFreq, CB_SETCURSEL, idx, 0);
+                }
+            }
+        }
+    }
+
+    /* +SPD<n>:<spd> — update spd combo */
+    {
+        const char *sp = strstr(resp, "+SPD");
+        if (sp && sp[4] >= '0' && sp[4] <= '9') {
+            const char *colon = strchr(sp + 4, ':');
+            if (colon) {
+                const char *v = colon + 1;
+                if (strncmp(v, "OK", 2) != 0) {
+                    int spd = atoi(v);
+                    int idx = spd - 4;
+                    if (idx >= 0 && idx <= 7)
+                        SendMessageW(pData->hComboSpd, CB_SETCURSEL, idx, 0);
+                }
+            }
+        }
+    }
+
+    /* +PWR<n>:<pwr> — update pwr combo */
+    {
+        const char *pp = strstr(resp, "+PWR");
+        if (pp && pp[4] >= '0' && pp[4] <= '9') {
+            const char *colon = strchr(pp + 4, ':');
+            if (colon) {
+                const char *v = colon + 1;
+                if (strncmp(v, "OK", 2) != 0) {
+                    int pwr = atoi(v);
+                    int idx = pwr - 24;
+                    if (idx >= 0 && idx <= 6)
+                        SendMessageW(pData->hComboPwr, CB_SETCURSEL, idx, 0);
+                }
+            }
         }
     }
 }
@@ -477,8 +543,11 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         ox += 104;
         pData->hComboOption = CreateCombo(hwnd, hInst, IDC_CFG_OPTION_COMBO,
             ox, cy, 130, 200, pData->hFont);
-        SendMessageW(pData->hComboOption, CB_ADDSTRING, 0, (LPARAM)L"TCPC (0)");
-        SendMessageW(pData->hComboOption, CB_ADDSTRING, 0, (LPARAM)L"UDPC (1)");
+        SendMessageW(pData->hComboOption, CB_ADDSTRING, 0, (LPARAM)L"socket");
+        SendMessageW(pData->hComboOption, CB_ADDSTRING, 0, (LPARAM)L"serial");
+        SendMessageW(pData->hComboOption, CB_ADDSTRING, 0, (LPARAM)L"mqtt");
+        SendMessageW(pData->hComboOption, CB_ADDSTRING, 0, (LPARAM)L"ali_cloud");
+        SendMessageW(pData->hComboOption, CB_ADDSTRING, 0, (LPARAM)L"usr_cloud");
         SendMessageW(pData->hComboOption, CB_SETCURSEL, 0, 0);
         ox += 136;
         pData->hBtnOptionSet = CreateBtn(hwnd, hInst, IDC_CFG_OPTION_SET,
@@ -543,12 +612,10 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         pData->hComboNwmode = CreateCombo(hwnd, hInst, IDC_CFG_NWMODE_COMBO,
             ox, cy, 130, 200, pData->hFont);
         SendMessageW(pData->hComboNwmode, CB_ADDSTRING, 0,
-            (LPARAM)L"透明 (0)");
+            (LPARAM)L"透传 (默认)");
         SendMessageW(pData->hComboNwmode, CB_ADDSTRING, 0,
-            (LPARAM)L"协议 (1)");
-        SendMessageW(pData->hComboNwmode, CB_ADDSTRING, 0,
-            (LPARAM)L"组网 (2)");
-        SendMessageW(pData->hComboNwmode, CB_SETCURSEL, 1, 0);
+            (LPARAM)L"组网");
+        SendMessageW(pData->hComboNwmode, CB_SETCURSEL, 0, 0);
         ox += 136;
         pData->hBtnNwmodeSet = CreateBtn(hwnd, hInst, IDC_CFG_NWMODE_SET,
             ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
@@ -562,9 +629,9 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         pData->hComboTtmode = CreateCombo(hwnd, hInst, IDC_CFG_TTMODE_COMBO,
             ox, cy, 130, 200, pData->hFont);
         SendMessageW(pData->hComboTtmode, CB_ADDSTRING, 0,
-            (LPARAM)L"点对点 (0)");
+            (LPARAM)L"广播透传 (默认)");
         SendMessageW(pData->hComboTtmode, CB_ADDSTRING, 0,
-            (LPARAM)L"广播 (1)");
+            (LPARAM)L"指定节点");
         SendMessageW(pData->hComboTtmode, CB_SETCURSEL, 0, 0);
         ox += 136;
         pData->hBtnTtmodeSet = CreateBtn(hwnd, hInst, IDC_CFG_TTMODE_SET,
@@ -580,10 +647,10 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         ox += 100;
         pData->hComboWmode = CreateCombo(hwnd, hInst, IDC_CFG_WMODE_COMBO,
             ox, cy, 130, 200, pData->hFont);
-        SendMessageW(pData->hComboWmode, CB_ADDSTRING, 0, (LPARAM)L"FP (0)");
-        SendMessageW(pData->hComboWmode, CB_ADDSTRING, 0, (LPARAM)L"TRANS (1)");
-        SendMessageW(pData->hComboWmode, CB_ADDSTRING, 0, (LPARAM)L"NET (2)");
-        SendMessageW(pData->hComboWmode, CB_SETCURSEL, 1, 0);
+        SendMessageW(pData->hComboWmode, CB_ADDSTRING, 0, (LPARAM)L"广播透传 (默认)");
+        SendMessageW(pData->hComboWmode, CB_ADDSTRING, 0, (LPARAM)L"指定节点");
+        SendMessageW(pData->hComboWmode, CB_ADDSTRING, 0, (LPARAM)L"主动上报");
+        SendMessageW(pData->hComboWmode, CB_SETCURSEL, 0, 0);
         ox += 136;
         pData->hBtnWmodeSet = CreateBtn(hwnd, hInst, IDC_CFG_WMODE_SET,
             ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
@@ -662,7 +729,7 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
             wsprintfW(pbuf, L"%d", p);
             SendMessageW(pData->hComboPwr, CB_ADDSTRING, 0, (LPARAM)pbuf);
         }
-        SendMessageW(pData->hComboPwr, CB_SETCURSEL, 3, 0); /* 27 */
+        SendMessageW(pData->hComboPwr, CB_SETCURSEL, 6, 0); /* 30 */
         ox += 66;
         pData->hBtnPwrSet = CreateBtn(hwnd, hInst, IDC_CFG_PWR_SET,
             ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
@@ -882,28 +949,38 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         case IDC_CFG_SPD_SET: {
             int sel = (int)SendMessageW(pData->hComboSpd, CB_GETCURSEL, 0, 0);
             int val = sel + 4;
+            int ch = (int)SendMessageW(pData->hComboCh, CB_GETCURSEL, 0, 0) + 1;
             char cmd[32];
-            snprintf(cmd, sizeof(cmd), "AT+SPD=%d", val);
+            snprintf(cmd, sizeof(cmd), "AT+SPD%d=%d", ch, val);
             SendAtCmd(pData, cmd);
             return 0;
         }
 
-        case IDC_CFG_SPD_QUERY:
-            SendAtCmd(pData, "AT+SPD?");
+        case IDC_CFG_SPD_QUERY: {
+            int ch = (int)SendMessageW(pData->hComboCh, CB_GETCURSEL, 0, 0) + 1;
+            char cmd[16];
+            snprintf(cmd, sizeof(cmd), "AT+SPD%d?", ch);
+            SendAtCmd(pData, cmd);
             return 0;
+        }
 
         case IDC_CFG_PWR_SET: {
             int sel = (int)SendMessageW(pData->hComboPwr, CB_GETCURSEL, 0, 0);
             int val = sel + 24;
+            int ch = (int)SendMessageW(pData->hComboCh, CB_GETCURSEL, 0, 0) + 1;
             char cmd[32];
-            snprintf(cmd, sizeof(cmd), "AT+PWR=%d", val);
+            snprintf(cmd, sizeof(cmd), "AT+PWR%d=%d", ch, val);
             SendAtCmd(pData, cmd);
             return 0;
         }
 
-        case IDC_CFG_PWR_QUERY:
-            SendAtCmd(pData, "AT+PWR?");
+        case IDC_CFG_PWR_QUERY: {
+            int ch = (int)SendMessageW(pData->hComboCh, CB_GETCURSEL, 0, 0) + 1;
+            char cmd[16];
+            snprintf(cmd, sizeof(cmd), "AT+PWR%d?", ch);
+            SendAtCmd(pData, cmd);
             return 0;
+        }
 
         /* ---- Group 4: AT command ---- */
         case IDC_CFG_SEND_BTN: {

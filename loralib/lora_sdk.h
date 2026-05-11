@@ -216,6 +216,12 @@ LORA_SDK_API void lora_sdk_get_net_params(lora_sdk_t *sdk);
 LORA_SDK_API void lora_sdk_send_at(lora_sdk_t *sdk, const char *at_cmd);
 
 /* ----------------------------------------------------------------
+ * Test mode — affects RSSI response test_flag field
+ * ---------------------------------------------------------------- */
+
+LORA_SDK_API void lora_sdk_set_test_flag(lora_sdk_t *sdk, int flag);
+
+/* ----------------------------------------------------------------
  * Utility
  * ---------------------------------------------------------------- */
 

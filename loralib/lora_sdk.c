@@ -118,6 +118,12 @@ LORA_SDK_API void lora_sdk_send_at(lora_sdk_t *sdk, const char *at_cmd)
     sdk_udp_send_at(sdk, at_cmd);
 }
 
+LORA_SDK_API void lora_sdk_set_test_flag(lora_sdk_t *sdk, int flag)
+{
+    if (!sdk) return;
+    sdk->test_flag = flag ? 1 : 0;
+}
+
 LORA_SDK_API int lora_sdk_build_frame(uint8_t *out, size_t out_size,
                                        uint32_t nid,
                                        const uint8_t *data,
