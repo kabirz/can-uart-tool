@@ -1,0 +1,1120 @@
+/**
+ * Tab 4: LoRa 配置 (via UDP AT commands)
+ *
+ * Device discovery, network settings, LoRa protocol parameters,
+ * AT command console, and response log.
+ * Uses loralib SDK (lora_sdk.h) for all UDP communication.
+ */
+#include <windows.h>
+#include <commctrl.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include "resource.h"
+#include "lora_sdk.h"
+
+/* ------------------------------------------------------------------ */
+/*  Message payload structures (heap-allocated, receiver frees)        */
+/* ------------------------------------------------------------------ */
+typedef struct {
+    char mac[32];
+    char name[64];
+    char sw[32];
+    char ip[64];
+} LoraDeviceMsg;
+
+typedef struct {
+    char ip[64];
+    char mask[64];
+    char gateway[64];
+} LoraNetParamsMsg;
+
+/* ------------------------------------------------------------------ */
+/*  Per-window instance data (stored via GWLP_USERDATA)                */
+/* ------------------------------------------------------------------ */
+typedef struct {
+    lora_sdk_t *sdk;
+
+    /* Group 1: Device discovery */
+    HWND hBtnSearch;
+    HWND hBtnGetNet;
+    HWND hBtnQueryGwid;
+    HWND hBtnQueryCsq;
+    HWND hMacText;
+    HWND hDevText;
+    HWND hSwText;
+    HWND hGwidText;
+    HWND hCsqText;
+
+    /* Group 2: Network settings */
+    HWND hDhcpText;
+    HWND hBtnDhcpQuery;
+    HWND hBtnDhcpOn;
+    HWND hBtnDhcpOff;
+    HWND hComboOption;
+    HWND hBtnOptionSet;
+    HWND hBtnOptionQuery;
+    HWND hEditIp;
+    HWND hBtnIpSet;
+    HWND hBtnIpQuery;
+    HWND hEditMask;
+    HWND hBtnMaskSet;
+    HWND hBtnMaskQuery;
+    HWND hEditGw;
+    HWND hBtnGwSet;
+    HWND hBtnGwQuery;
+
+    /* Group 3: LoRa protocol */
+    HWND hComboNwmode;
+    HWND hBtnNwmodeSet;
+    HWND hBtnNwmodeQuery;
+    HWND hComboTtmode;
+    HWND hBtnTtmodeSet;
+    HWND hBtnTtmodeQuery;
+    HWND hComboWmode;
+    HWND hBtnWmodeSet;
+    HWND hBtnWmodeQuery;
+    HWND hUpwidText;
+    HWND hBtnUpwidQuery;
+    HWND hBtnUpwidOn;
+    HWND hBtnUpwidOff;
+    HWND hComboCh;
+    HWND hComboFreq;
+    HWND hBtnChSet;
+    HWND hBtnChQuery;
+    HWND hComboSpd;
+    HWND hBtnSpdSet;
+    HWND hBtnSpdQuery;
+    HWND hComboPwr;
+    HWND hBtnPwrSet;
+    HWND hBtnPwrQuery;
+
+    /* Group 4: AT command */
+    HWND hEditAtCmd;
+    HWND hBtnAtSend;
+    HWND hBtnQueryVer;
+
+    /* Group 5: Log */
+    HWND hLogEdit;
+    HWND hBtnClear;
+
+    /* Resizable group boxes */
+    HWND hGrpDev;
+    HWND hGrpNet;
+    HWND hGrpProto;
+    HWND hGrpAt;
+    HWND hGrpLog;
+
+    /* Fonts */
+    HFONT hFont;
+    HFONT hFontBold;
+    HFONT hFontMono;
+} TAB_LORA_CFG;
+
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                           */
+/* ------------------------------------------------------------------ */
+static TAB_LORA_CFG *GetCfgData(HWND hwnd)
+{
+    return (TAB_LORA_CFG *)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+}
+
+/* Create a static label (forces height to 24 for 24px font) */
+static HWND CreateLabel(HWND hParent, HINSTANCE hInst, int id,
+                         int x, int y, int w, int h,
+                         const wchar_t *text, HFONT hFont)
+{
+    (void)h;
+    HWND hw = CreateWindowExW(0, L"STATIC", text,
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        x, y, w, 24, hParent, (HMENU)(INT_PTR)id, hInst, NULL);
+    SendMessageW(hw, WM_SETFONT, (WPARAM)hFont, TRUE);
+    return hw;
+}
+
+/* Create a push button */
+static HWND CreateBtn(HWND hParent, HINSTANCE hInst, int id,
+                       int x, int y, int w, int h,
+                       const wchar_t *text, HFONT hFont)
+{
+    HWND hw = CreateWindowExW(0, L"BUTTON", text,
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        x, y, w, h, hParent, (HMENU)(INT_PTR)id, hInst, NULL);
+    SendMessageW(hw, WM_SETFONT, (WPARAM)hFont, TRUE);
+    return hw;
+}
+
+/* Create a combo box (dropdown list) */
+static HWND CreateCombo(HWND hParent, HINSTANCE hInst, int id,
+                         int x, int y, int w, int h,
+                         HFONT hFont)
+{
+    HWND hw = CreateWindowExW(0, L"COMBOBOX", L"",
+        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
+        x, y, w, h, hParent, (HMENU)(INT_PTR)id, hInst, NULL);
+    SendMessageW(hw, WM_SETFONT, (WPARAM)hFont, TRUE);
+    return hw;
+}
+
+/* Create an edit control (forces height to 26 for 24px font) */
+static HWND CreateEdit(HWND hParent, HINSTANCE hInst, int id,
+                        int x, int y, int w, int h,
+                        const wchar_t *text, HFONT hFont, DWORD extraStyle)
+{
+    (void)h;
+    HWND hw = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", text,
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | extraStyle,
+        x, y, w, 26, hParent, (HMENU)(INT_PTR)id, hInst, NULL);
+    SendMessageW(hw, WM_SETFONT, (WPARAM)hFont, TRUE);
+    return hw;
+}
+
+/* Create a read-only static text field (forces height to 26 for 24px font) */
+static HWND CreateStaticText(HWND hParent, HINSTANCE hInst, int id,
+                              int x, int y, int w, int h,
+                              const wchar_t *text, HFONT hFont)
+{
+    (void)h;
+    HWND hw = CreateWindowExW(0, L"STATIC", text,
+        WS_CHILD | WS_VISIBLE | SS_LEFT | SS_SUNKEN,
+        x, y, w, 26, hParent, (HMENU)(INT_PTR)id, hInst, NULL);
+    SendMessageW(hw, WM_SETFONT, (WPARAM)hFont, TRUE);
+    return hw;
+}
+
+/* Send AT command via SDK */
+static void SendAtCmd(TAB_LORA_CFG *pData, const char *cmd)
+{
+    if (pData->sdk)
+        lora_sdk_send_at(pData->sdk, cmd);
+}
+
+/* Append timestamped text to log edit */
+static void AppendLog(TAB_LORA_CFG *pData, const char *text)
+{
+    if (!pData->hLogEdit) return;
+
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+
+    char ts[32];
+    snprintf(ts, sizeof(ts), "[%02d:%02d:%02d] ",
+             st.wHour, st.wMinute, st.wSecond);
+
+    int tsLen = (int)strlen(ts);
+    int textLen = (int)strlen(text);
+
+    int totalLen = GetWindowTextLengthA(pData->hLogEdit);
+    SendMessageA(pData->hLogEdit, EM_SETSEL, totalLen, totalLen);
+    SendMessageA(pData->hLogEdit, EM_REPLACESEL, FALSE, (LPARAM)ts);
+    SendMessageA(pData->hLogEdit, EM_REPLACESEL, FALSE, (LPARAM)text);
+    /* Add newline if not already present */
+    if (textLen > 0 && text[textLen - 1] != '\n') {
+        SendMessageA(pData->hLogEdit, EM_REPLACESEL, FALSE, (LPARAM)"\r\n");
+    }
+    SendMessageA(pData->hLogEdit, EM_SCROLLCARET, 0, 0);
+}
+
+/* Parse AT response and update corresponding controls */
+static void ParseAtResponse(TAB_LORA_CFG *pData, const char *resp)
+{
+    if (!resp) return;
+
+    const char *p;
+    int val;
+    wchar_t wbuf[128];
+
+    /* +NWMODE: */
+    p = strstr(resp, "+NWMODE:");
+    if (p) {
+        if (sscanf(p + 8, "%d", &val) == 1) {
+            if (val >= 0 && val <= 2)
+                SendMessageW(pData->hComboNwmode, CB_SETCURSEL, val, 0);
+        }
+    }
+
+    /* +TTMODE: */
+    p = strstr(resp, "+TTMODE:");
+    if (p) {
+        if (sscanf(p + 8, "%d", &val) == 1) {
+            if (val >= 0 && val <= 1)
+                SendMessageW(pData->hComboTtmode, CB_SETCURSEL, val, 0);
+        }
+    }
+
+    /* +WMODE: */
+    p = strstr(resp, "+WMODE:");
+    if (p) {
+        if (sscanf(p + 7, "%d", &val) == 1) {
+            if (val >= 0 && val <= 2)
+                SendMessageW(pData->hComboWmode, CB_SETCURSEL, val, 0);
+        }
+    }
+
+    /* UPWID: */
+    p = strstr(resp, "UPWID:");
+    if (p) {
+        const char *valStart = p + 6;
+        while (*valStart == ' ') valStart++;
+        MultiByteToWideChar(CP_ACP, 0, valStart, -1, wbuf, 128);
+        /* Trim trailing whitespace / newline */
+        for (wchar_t *c = wbuf; *c; c++) {
+            if (*c == L'\r' || *c == L'\n' || *c == L' ') { *c = L'\0'; break; }
+        }
+        SetWindowTextW(pData->hUpwidText, wbuf);
+    }
+
+    /* +DHCP: */
+    p = strstr(resp, "+DHCP:");
+    if (p) {
+        const char *valStart = p + 6;
+        while (*valStart == ' ') valStart++;
+        MultiByteToWideChar(CP_ACP, 0, valStart, -1, wbuf, 128);
+        for (wchar_t *c = wbuf; *c; c++) {
+            if (*c == L'\r' || *c == L'\n' || *c == L' ') { *c = L'\0'; break; }
+        }
+        SetWindowTextW(pData->hDhcpText, wbuf);
+    }
+
+    /* +OPTION: */
+    p = strstr(resp, "+OPTION:");
+    if (p) {
+        if (sscanf(p + 8, "%d", &val) == 1) {
+            if (val >= 0 && val <= 1)
+                SendMessageW(pData->hComboOption, CB_SETCURSEL, val, 0);
+        }
+    }
+
+    /* GWID: */
+    p = strstr(resp, "GWID:");
+    if (p) {
+        const char *valStart = p + 5;
+        while (*valStart == ' ') valStart++;
+        MultiByteToWideChar(CP_ACP, 0, valStart, -1, wbuf, 128);
+        for (wchar_t *c = wbuf; *c; c++) {
+            if (*c == L'\r' || *c == L'\n' || *c == L' ') { *c = L'\0'; break; }
+        }
+        SetWindowTextW(pData->hGwidText, wbuf);
+    }
+
+    /* +CSQ: */
+    p = strstr(resp, "+CSQ:");
+    if (p) {
+        const char *valStart = p + 5;
+        while (*valStart == ' ') valStart++;
+        MultiByteToWideChar(CP_ACP, 0, valStart, -1, wbuf, 128);
+        for (wchar_t *c = wbuf; *c; c++) {
+            if (*c == L'\r' || *c == L'\n' || *c == L' ') { *c = L'\0'; break; }
+        }
+        SetWindowTextW(pData->hCsqText, wbuf);
+    }
+
+    /* +CH1: or +CH2: — extract frequency */
+    p = strstr(resp, "+CH1:");
+    if (!p) p = strstr(resp, "+CH2:");
+    if (p) {
+        if (sscanf(p + 5, "%d", &val) == 1) {
+            /* Find freq combo index: freq values are 4100, 4200, ... 5100 */
+            int idx = (val - 4100) / 100;
+            if (idx >= 0 && idx <= 10)
+                SendMessageW(pData->hComboFreq, CB_SETCURSEL, idx, 0);
+        }
+    }
+
+    /* +SPD: */
+    p = strstr(resp, "+SPD:");
+    if (p) {
+        if (sscanf(p + 5, "%d", &val) == 1) {
+            int idx = val - 4;
+            if (idx >= 0 && idx <= 7)
+                SendMessageW(pData->hComboSpd, CB_SETCURSEL, idx, 0);
+        }
+    }
+
+    /* +PWR: */
+    p = strstr(resp, "+PWR:");
+    if (p) {
+        if (sscanf(p + 5, "%d", &val) == 1) {
+            int idx = val - 24;
+            if (idx >= 0 && idx <= 6)
+                SendMessageW(pData->hComboPwr, CB_SETCURSEL, idx, 0);
+        }
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  WndProc for the tab page                                          */
+/* ------------------------------------------------------------------ */
+static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
+                                            WPARAM wParam, LPARAM lParam)
+{
+    TAB_LORA_CFG *pData = GetCfgData(hwnd);
+
+    switch (uMsg) {
+
+    /* ---- Creation ---- */
+    case WM_NCCREATE: {
+        pData = (TAB_LORA_CFG *)calloc(1, sizeof(TAB_LORA_CFG));
+        if (!pData) return FALSE;
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)pData);
+        return TRUE;
+    }
+
+    case WM_CREATE: {
+        CREATESTRUCTW *cs = (CREATESTRUCTW *)lParam;
+        HINSTANCE hInst = cs->hInstance;
+
+        pData->sdk = (lora_sdk_t *)cs->lpCreateParams;
+
+        /* Get actual client area */
+        RECT rcClient;
+        GetClientRect(hwnd, &rcClient);
+        int pageW = rcClient.right  > 0 ? rcClient.right  : WINDOW_WIDTH;
+        int pageH = rcClient.bottom > 0 ? rcClient.bottom : WINDOW_HEIGHT;
+
+        /* Create fonts */
+        pData->hFont = CreateFontW(
+            24, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
+            L"Microsoft YaHei");
+        pData->hFontBold = CreateFontW(
+            24, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
+            L"Microsoft YaHei");
+        pData->hFontMono = CreateFontW(
+            20, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN,
+            L"Consolas");
+
+        int margin = 14;
+        int lineH = 34;
+        int btnH = 28;
+        int smallBtnW = 80;
+        int smallBtnH = 28;
+        int cx, cy, ox;
+
+        /* ========== Group 1: Device Discovery ========== */
+        int grp1Y = margin;
+        int grp1W = pageW - 2 * margin;
+        int grp1H = 94;
+        pData->hGrpDev = CreateWindowExW(0, L"BUTTON", L"设备发现",
+            WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+            margin, grp1Y, grp1W, grp1H, hwnd, NULL, hInst, NULL);
+        SendMessageW(pData->hGrpDev, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+
+        cx = margin + 14;
+        cy = grp1Y + 26;
+
+        /* Row 1: Action buttons */
+        ox = cx;
+        pData->hBtnSearch = CreateBtn(hwnd, hInst, IDC_CFG_SEARCH_BTN,
+            ox, cy, 110, btnH, L"搜索设备", pData->hFont);
+        ox += 116;
+        pData->hBtnGetNet = CreateBtn(hwnd, hInst, IDC_CFG_GETNET_BTN,
+            ox, cy, 110, btnH, L"获取网络", pData->hFont);
+        ox += 116;
+        pData->hBtnQueryGwid = CreateBtn(hwnd, hInst, IDC_CFG_QUERY_GWID,
+            ox, cy, 110, btnH, L"查询GWID", pData->hFont);
+        ox += 116;
+        pData->hBtnQueryCsq = CreateBtn(hwnd, hInst, IDC_CFG_QUERY_CSQ,
+            ox, cy, 110, btnH, L"查询信号", pData->hFont);
+        cy += lineH;
+
+        /* Row 2: All info in one line */
+        ox = cx;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 72, 24, L"MAC:", pData->hFont);
+        pData->hMacText = CreateStaticText(hwnd, hInst, IDC_CFG_MAC_TEXT,
+            ox + 72, cy, 140, 24, L"-", pData->hFontMono);
+        ox += 220;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 72, 24, L"设备:", pData->hFont);
+        pData->hDevText = CreateStaticText(hwnd, hInst, IDC_CFG_DEV_TEXT,
+            ox + 72, cy, 140, 24, L"-", pData->hFontMono);
+        ox += 220;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 72, 24, L"SW:", pData->hFont);
+        pData->hSwText = CreateStaticText(hwnd, hInst, IDC_CFG_SW_TEXT,
+            ox + 72, cy, 100, 24, L"-", pData->hFontMono);
+        ox += 180;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 72, 24, L"GWID:", pData->hFont);
+        pData->hGwidText = CreateStaticText(hwnd, hInst, IDC_CFG_GWID_TEXT,
+            ox + 72, cy, 100, 24, L"-", pData->hFontMono);
+        ox += 180;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 72, 24, L"信号:", pData->hFont);
+        pData->hCsqText = CreateStaticText(hwnd, hInst, IDC_CFG_CSQ_TEXT,
+            ox + 72, cy, 80, 24, L"-", pData->hFontMono);
+
+        /* ========== Group 2: Network Settings ========== */
+        int grp2Y = grp1Y + grp1H + 6;
+        int grp2W = pageW - 2 * margin;
+        int grp2H = 140;
+        pData->hGrpNet = CreateWindowExW(0, L"BUTTON", L"网络设置",
+            WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+            margin, grp2Y, grp2W, grp2H, hwnd, NULL, hInst, NULL);
+        SendMessageW(pData->hGrpNet, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+
+        cx = margin + 14;
+        cy = grp2Y + 26;
+
+        /* Row 1: DHCP + Connection mode */
+        ox = cx;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 4, 72, 20, L"DHCP:", pData->hFont);
+        pData->hDhcpText = CreateStaticText(hwnd, hInst, IDC_CFG_DHCP_TEXT,
+            ox + 76, cy, 80, 24, L"-", pData->hFontMono);
+        ox += 164;
+        pData->hBtnDhcpQuery = CreateBtn(hwnd, hInst, IDC_CFG_DHCP_QUERY,
+            ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
+        ox += smallBtnW + 6;
+        pData->hBtnDhcpOn = CreateBtn(hwnd, hInst, IDC_CFG_DHCP_ON,
+            ox, cy, smallBtnW, smallBtnH, L"开启", pData->hFont);
+        ox += smallBtnW + 6;
+        pData->hBtnDhcpOff = CreateBtn(hwnd, hInst, IDC_CFG_DHCP_OFF,
+            ox, cy, smallBtnW, smallBtnH, L"关闭", pData->hFont);
+        ox += smallBtnW + 24;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 4, 100, 20,
+            L"连接模式:", pData->hFont);
+        ox += 104;
+        pData->hComboOption = CreateCombo(hwnd, hInst, IDC_CFG_OPTION_COMBO,
+            ox, cy, 130, 200, pData->hFont);
+        SendMessageW(pData->hComboOption, CB_ADDSTRING, 0, (LPARAM)L"TCPC (0)");
+        SendMessageW(pData->hComboOption, CB_ADDSTRING, 0, (LPARAM)L"UDPC (1)");
+        SendMessageW(pData->hComboOption, CB_SETCURSEL, 0, 0);
+        ox += 136;
+        pData->hBtnOptionSet = CreateBtn(hwnd, hInst, IDC_CFG_OPTION_SET,
+            ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
+        ox += smallBtnW + 6;
+        pData->hBtnOptionQuery = CreateBtn(hwnd, hInst, IDC_CFG_OPTION_QUERY,
+            ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
+        cy += lineH;
+
+        /* Row 2: IP + Mask */
+        ox = cx;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 4, 72, 20, L"IP:", pData->hFont);
+        pData->hEditIp = CreateEdit(hwnd, hInst, IDC_CFG_IP_EDIT,
+            ox + 76, cy, 140, 26, L"192.168.1.100", pData->hFontMono, 0);
+        ox += 224;
+        pData->hBtnIpSet = CreateBtn(hwnd, hInst, IDC_CFG_IP_SET,
+            ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
+        ox += smallBtnW + 6;
+        pData->hBtnIpQuery = CreateBtn(hwnd, hInst, IDC_CFG_IP_QUERY,
+            ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
+        ox += smallBtnW + 24;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 4, 72, 20, L"掩码:", pData->hFont);
+        ox += 76;
+        pData->hEditMask = CreateEdit(hwnd, hInst, IDC_CFG_MASK_EDIT,
+            ox, cy, 140, 26, L"255.255.255.0", pData->hFontMono, 0);
+        ox += 146;
+        pData->hBtnMaskSet = CreateBtn(hwnd, hInst, IDC_CFG_MASK_SET,
+            ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
+        ox += smallBtnW + 6;
+        pData->hBtnMaskQuery = CreateBtn(hwnd, hInst, IDC_CFG_MASK_QUERY,
+            ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
+        cy += lineH;
+
+        /* Row 3: Gateway */
+        ox = cx;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 4, 72, 20, L"网关:", pData->hFont);
+        pData->hEditGw = CreateEdit(hwnd, hInst, IDC_CFG_GW_EDIT,
+            ox + 76, cy, 140, 26, L"192.168.1.1", pData->hFontMono, 0);
+        ox += 224;
+        pData->hBtnGwSet = CreateBtn(hwnd, hInst, IDC_CFG_GW_SET,
+            ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
+        ox += smallBtnW + 6;
+        pData->hBtnGwQuery = CreateBtn(hwnd, hInst, IDC_CFG_GW_QUERY,
+            ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
+
+        /* ========== Group 3: LoRa Protocol ========== */
+        int grp3Y = grp2Y + grp2H + 6;
+        int grp3W = pageW - 2 * margin;
+        int grp3H = 130;
+        pData->hGrpProto = CreateWindowExW(0, L"BUTTON", L"LoRa 协议",
+            WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+            margin, grp3Y, grp3W, grp3H, hwnd, NULL, hInst, NULL);
+        SendMessageW(pData->hGrpProto, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+
+        cx = margin + 14;
+        cy = grp3Y + 26;
+
+        /* Row 1: NWMODE + TTMODE */
+        ox = cx;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 96, 24, L"NWMODE:", pData->hFont);
+        ox += 100;
+        pData->hComboNwmode = CreateCombo(hwnd, hInst, IDC_CFG_NWMODE_COMBO,
+            ox, cy, 130, 200, pData->hFont);
+        SendMessageW(pData->hComboNwmode, CB_ADDSTRING, 0,
+            (LPARAM)L"透明 (0)");
+        SendMessageW(pData->hComboNwmode, CB_ADDSTRING, 0,
+            (LPARAM)L"协议 (1)");
+        SendMessageW(pData->hComboNwmode, CB_ADDSTRING, 0,
+            (LPARAM)L"组网 (2)");
+        SendMessageW(pData->hComboNwmode, CB_SETCURSEL, 1, 0);
+        ox += 136;
+        pData->hBtnNwmodeSet = CreateBtn(hwnd, hInst, IDC_CFG_NWMODE_SET,
+            ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
+        ox += smallBtnW + 6;
+        pData->hBtnNwmodeQuery = CreateBtn(hwnd, hInst, IDC_CFG_NWMODE_QUERY,
+            ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
+        ox += smallBtnW + 14;
+
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 96, 24, L"TTMODE:", pData->hFont);
+        ox += 100;
+        pData->hComboTtmode = CreateCombo(hwnd, hInst, IDC_CFG_TTMODE_COMBO,
+            ox, cy, 130, 200, pData->hFont);
+        SendMessageW(pData->hComboTtmode, CB_ADDSTRING, 0,
+            (LPARAM)L"点对点 (0)");
+        SendMessageW(pData->hComboTtmode, CB_ADDSTRING, 0,
+            (LPARAM)L"广播 (1)");
+        SendMessageW(pData->hComboTtmode, CB_SETCURSEL, 0, 0);
+        ox += 136;
+        pData->hBtnTtmodeSet = CreateBtn(hwnd, hInst, IDC_CFG_TTMODE_SET,
+            ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
+        ox += smallBtnW + 6;
+        pData->hBtnTtmodeQuery = CreateBtn(hwnd, hInst, IDC_CFG_TTMODE_QUERY,
+            ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
+        cy += lineH;
+
+        /* Row 2: WMODE + UPWID */
+        ox = cx;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 96, 24, L"WMODE:", pData->hFont);
+        ox += 100;
+        pData->hComboWmode = CreateCombo(hwnd, hInst, IDC_CFG_WMODE_COMBO,
+            ox, cy, 130, 200, pData->hFont);
+        SendMessageW(pData->hComboWmode, CB_ADDSTRING, 0, (LPARAM)L"FP (0)");
+        SendMessageW(pData->hComboWmode, CB_ADDSTRING, 0, (LPARAM)L"TRANS (1)");
+        SendMessageW(pData->hComboWmode, CB_ADDSTRING, 0, (LPARAM)L"NET (2)");
+        SendMessageW(pData->hComboWmode, CB_SETCURSEL, 1, 0);
+        ox += 136;
+        pData->hBtnWmodeSet = CreateBtn(hwnd, hInst, IDC_CFG_WMODE_SET,
+            ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
+        ox += smallBtnW + 6;
+        pData->hBtnWmodeQuery = CreateBtn(hwnd, hInst, IDC_CFG_WMODE_QUERY,
+            ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
+        ox += smallBtnW + 14;
+
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 96, 24, L"UPWID:", pData->hFont);
+        ox += 100;
+        pData->hUpwidText = CreateStaticText(hwnd, hInst, IDC_CFG_UPWID_TEXT,
+            ox, cy, 80, 22, L"-", pData->hFontMono);
+        ox += 86;
+        pData->hBtnUpwidQuery = CreateBtn(hwnd, hInst, IDC_CFG_UPWID_QUERY,
+            ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
+        ox += smallBtnW + 6;
+        pData->hBtnUpwidOn = CreateBtn(hwnd, hInst, IDC_CFG_UPWID_ON,
+            ox, cy, smallBtnW, smallBtnH, L"开启", pData->hFont);
+        ox += smallBtnW + 6;
+        pData->hBtnUpwidOff = CreateBtn(hwnd, hInst, IDC_CFG_UPWID_OFF,
+            ox, cy, smallBtnW, smallBtnH, L"关闭", pData->hFont);
+        cy += lineH;
+
+        /* Row 3: CH + Freq + SPD + PWR */
+        ox = cx;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 70, 24, L"通道:", pData->hFont);
+        ox += 74;
+        pData->hComboCh = CreateCombo(hwnd, hInst, IDC_CFG_CH_COMBO,
+            ox, cy, 70, 200, pData->hFont);
+        SendMessageW(pData->hComboCh, CB_ADDSTRING, 0, (LPARAM)L"CH1");
+        SendMessageW(pData->hComboCh, CB_ADDSTRING, 0, (LPARAM)L"CH2");
+        SendMessageW(pData->hComboCh, CB_SETCURSEL, 0, 0);
+        ox += 76;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 70, 24, L"频率:", pData->hFont);
+        ox += 74;
+        pData->hComboFreq = CreateCombo(hwnd, hInst, IDC_CFG_CH_FREQ_COMBO,
+            ox, cy, 90, 200, pData->hFont);
+        for (int f = 4100; f <= 5100; f += 100) {
+            wchar_t fbuf[8];
+            wsprintfW(fbuf, L"%d", f);
+            SendMessageW(pData->hComboFreq, CB_ADDSTRING, 0, (LPARAM)fbuf);
+        }
+        SendMessageW(pData->hComboFreq, CB_SETCURSEL, 6, 0); /* 4700 */
+        ox += 96;
+        pData->hBtnChSet = CreateBtn(hwnd, hInst, IDC_CFG_CH_SET,
+            ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
+        ox += smallBtnW + 6;
+        pData->hBtnChQuery = CreateBtn(hwnd, hInst, IDC_CFG_CH_QUERY,
+            ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
+        ox += smallBtnW + 14;
+
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 70, 24, L"SPD:", pData->hFont);
+        ox += 74;
+        pData->hComboSpd = CreateCombo(hwnd, hInst, IDC_CFG_SPD_COMBO,
+            ox, cy, 60, 200, pData->hFont);
+        for (int s = 4; s <= 11; s++) {
+            wchar_t sbuf[8];
+            wsprintfW(sbuf, L"%d", s);
+            SendMessageW(pData->hComboSpd, CB_ADDSTRING, 0, (LPARAM)sbuf);
+        }
+        SendMessageW(pData->hComboSpd, CB_SETCURSEL, 3, 0); /* 7 */
+        ox += 66;
+        pData->hBtnSpdSet = CreateBtn(hwnd, hInst, IDC_CFG_SPD_SET,
+            ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
+        ox += smallBtnW + 6;
+        pData->hBtnSpdQuery = CreateBtn(hwnd, hInst, IDC_CFG_SPD_QUERY,
+            ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
+        ox += smallBtnW + 14;
+
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 70, 24, L"PWR:", pData->hFont);
+        ox += 74;
+        pData->hComboPwr = CreateCombo(hwnd, hInst, IDC_CFG_PWR_COMBO,
+            ox, cy, 60, 200, pData->hFont);
+        for (int p = 24; p <= 30; p++) {
+            wchar_t pbuf[8];
+            wsprintfW(pbuf, L"%d", p);
+            SendMessageW(pData->hComboPwr, CB_ADDSTRING, 0, (LPARAM)pbuf);
+        }
+        SendMessageW(pData->hComboPwr, CB_SETCURSEL, 3, 0); /* 27 */
+        ox += 66;
+        pData->hBtnPwrSet = CreateBtn(hwnd, hInst, IDC_CFG_PWR_SET,
+            ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
+        ox += smallBtnW + 6;
+        pData->hBtnPwrQuery = CreateBtn(hwnd, hInst, IDC_CFG_PWR_QUERY,
+            ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
+
+        /* ========== Group 4: AT Command ========== */
+        int grp4Y = grp3Y + grp3H + 6;
+        int grp4W = pageW - 2 * margin;
+        int grp4H = 56;
+        pData->hGrpAt = CreateWindowExW(0, L"BUTTON", L"AT 命令",
+            WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+            margin, grp4Y, grp4W, grp4H, hwnd, NULL, hInst, NULL);
+        SendMessageW(pData->hGrpAt, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+
+        cx = margin + 14;
+        cy = grp4Y + 26;
+
+        pData->hEditAtCmd = CreateEdit(hwnd, hInst, IDC_CFG_CMD_EDIT,
+            cx, cy, 400, 22, L"AT+", pData->hFontMono, 0);
+        pData->hBtnAtSend = CreateBtn(hwnd, hInst, IDC_CFG_SEND_BTN,
+            cx + 408, cy, 80, smallBtnH, L"发送", pData->hFont);
+        pData->hBtnQueryVer = CreateBtn(hwnd, hInst, IDC_CFG_QUERY_VER,
+            cx + 496, cy, 100, smallBtnH, L"查询版本", pData->hFont);
+
+        /* ========== Group 5: Log (bottom, stretch height) ========== */
+        int grp5Y = grp4Y + grp4H + 6;
+        int grp5W = pageW - 2 * margin;
+        int grp5H = pageH - grp5Y - margin;
+        if (grp5H < 80) grp5H = 80;
+        pData->hGrpLog = CreateWindowExW(0, L"BUTTON", L"响应日志",
+            WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+            margin, grp5Y, grp5W, grp5H, hwnd, NULL, hInst, NULL);
+        SendMessageW(pData->hGrpLog, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+
+        int logX = margin + 10;
+        int logY = grp5Y + 24;
+        int logW = grp5W - 20;
+        int logH = grp5H - 58;
+        if (logH < 30) logH = 30;
+        if (logW < 50) logW = 50;
+        pData->hLogEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+            WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL |
+            ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
+            logX, logY, logW, logH,
+            hwnd, (HMENU)IDC_CFG_LOG_EDIT, hInst, NULL);
+        SendMessageW(pData->hLogEdit, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
+
+        pData->hBtnClear = CreateBtn(hwnd, hInst, IDC_CFG_CLEAR_BTN,
+            margin + grp5W - 100, grp5Y + grp5H - 32, 80, smallBtnH,
+            L"清除", pData->hFont);
+
+        return 0;
+    }
+
+    /* ---- Command handling ---- */
+    case WM_COMMAND:
+        switch (LOWORD(wParam)) {
+
+        /* ---- Group 1: Device discovery ---- */
+        case IDC_CFG_SEARCH_BTN:
+            if (pData->sdk)
+                lora_sdk_search_devices(pData->sdk);
+            return 0;
+
+        case IDC_CFG_GETNET_BTN:
+            if (pData->sdk)
+                lora_sdk_get_net_params(pData->sdk);
+            return 0;
+
+        case IDC_CFG_QUERY_GWID:
+            SendAtCmd(pData, "AT+GWID?");
+            return 0;
+
+        case IDC_CFG_QUERY_CSQ:
+            SendAtCmd(pData, "AT+CSQ?");
+            return 0;
+
+        /* ---- Group 2: Network settings ---- */
+        case IDC_CFG_DHCP_QUERY:
+            SendAtCmd(pData, "AT+DHCP?");
+            return 0;
+
+        case IDC_CFG_DHCP_ON:
+            SendAtCmd(pData, "AT+DHCP=ON");
+            return 0;
+
+        case IDC_CFG_DHCP_OFF:
+            SendAtCmd(pData, "AT+DHCP=OFF");
+            return 0;
+
+        case IDC_CFG_OPTION_SET: {
+            int sel = (int)SendMessageW(pData->hComboOption, CB_GETCURSEL, 0, 0);
+            char cmd[32];
+            snprintf(cmd, sizeof(cmd), "AT+OPTION=%d", sel);
+            SendAtCmd(pData, cmd);
+            return 0;
+        }
+
+        case IDC_CFG_OPTION_QUERY:
+            SendAtCmd(pData, "AT+OPTION?");
+            return 0;
+
+        case IDC_CFG_IP_SET: {
+            wchar_t wbuf[64];
+            GetWindowTextW(pData->hEditIp, wbuf, 64);
+            char abuf[64];
+            WideCharToMultiByte(CP_ACP, 0, wbuf, -1, abuf, 64, NULL, NULL);
+            char cmd[128];
+            snprintf(cmd, sizeof(cmd), "AT+GWIP=%s", abuf);
+            SendAtCmd(pData, cmd);
+            return 0;
+        }
+
+        case IDC_CFG_IP_QUERY:
+            SendAtCmd(pData, "AT+GWIP?");
+            return 0;
+
+        case IDC_CFG_MASK_SET: {
+            wchar_t wbuf[64];
+            GetWindowTextW(pData->hEditMask, wbuf, 64);
+            char abuf[64];
+            WideCharToMultiByte(CP_ACP, 0, wbuf, -1, abuf, 64, NULL, NULL);
+            char cmd[128];
+            snprintf(cmd, sizeof(cmd), "AT+MASK=%s", abuf);
+            SendAtCmd(pData, cmd);
+            return 0;
+        }
+
+        case IDC_CFG_MASK_QUERY:
+            SendAtCmd(pData, "AT+MASK?");
+            return 0;
+
+        case IDC_CFG_GW_SET: {
+            wchar_t wbuf[64];
+            GetWindowTextW(pData->hEditGw, wbuf, 64);
+            char abuf[64];
+            WideCharToMultiByte(CP_ACP, 0, wbuf, -1, abuf, 64, NULL, NULL);
+            char cmd[128];
+            snprintf(cmd, sizeof(cmd), "AT+GW=%s", abuf);
+            SendAtCmd(pData, cmd);
+            return 0;
+        }
+
+        case IDC_CFG_GW_QUERY:
+            SendAtCmd(pData, "AT+GW?");
+            return 0;
+
+        /* ---- Group 3: LoRa protocol ---- */
+        case IDC_CFG_NWMODE_SET: {
+            int sel = (int)SendMessageW(pData->hComboNwmode, CB_GETCURSEL, 0, 0);
+            char cmd[32];
+            snprintf(cmd, sizeof(cmd), "AT+NWMODE=%d", sel);
+            SendAtCmd(pData, cmd);
+            return 0;
+        }
+
+        case IDC_CFG_NWMODE_QUERY:
+            SendAtCmd(pData, "AT+NWMODE?");
+            return 0;
+
+        case IDC_CFG_TTMODE_SET: {
+            int sel = (int)SendMessageW(pData->hComboTtmode, CB_GETCURSEL, 0, 0);
+            char cmd[32];
+            snprintf(cmd, sizeof(cmd), "AT+TTMODE=%d", sel);
+            SendAtCmd(pData, cmd);
+            return 0;
+        }
+
+        case IDC_CFG_TTMODE_QUERY:
+            SendAtCmd(pData, "AT+TTMODE?");
+            return 0;
+
+        case IDC_CFG_WMODE_SET: {
+            int sel = (int)SendMessageW(pData->hComboWmode, CB_GETCURSEL, 0, 0);
+            char cmd[32];
+            snprintf(cmd, sizeof(cmd), "AT+WMODE=%d", sel);
+            SendAtCmd(pData, cmd);
+            return 0;
+        }
+
+        case IDC_CFG_WMODE_QUERY:
+            SendAtCmd(pData, "AT+WMODE?");
+            return 0;
+
+        case IDC_CFG_UPWID_QUERY:
+            SendAtCmd(pData, "AT+UPWID?");
+            return 0;
+
+        case IDC_CFG_UPWID_ON:
+            SendAtCmd(pData, "AT+UPWID=ON");
+            return 0;
+
+        case IDC_CFG_UPWID_OFF:
+            SendAtCmd(pData, "AT+UPWID=OFF");
+            return 0;
+
+        case IDC_CFG_CH_SET: {
+            int ch_sel = (int)SendMessageW(pData->hComboCh, CB_GETCURSEL, 0, 0) + 1;
+            int freq_sel = (int)SendMessageW(pData->hComboFreq, CB_GETCURSEL, 0, 0);
+            int freq = 4100 + freq_sel * 100;
+            char cmd[32];
+            snprintf(cmd, sizeof(cmd), "AT+CH%d=%d", ch_sel, freq);
+            SendAtCmd(pData, cmd);
+            return 0;
+        }
+
+        case IDC_CFG_CH_QUERY: {
+            int ch_sel = (int)SendMessageW(pData->hComboCh, CB_GETCURSEL, 0, 0) + 1;
+            char cmd[16];
+            snprintf(cmd, sizeof(cmd), "AT+CH%d?", ch_sel);
+            SendAtCmd(pData, cmd);
+            return 0;
+        }
+
+        case IDC_CFG_SPD_SET: {
+            int sel = (int)SendMessageW(pData->hComboSpd, CB_GETCURSEL, 0, 0);
+            int val = sel + 4;
+            char cmd[32];
+            snprintf(cmd, sizeof(cmd), "AT+SPD=%d", val);
+            SendAtCmd(pData, cmd);
+            return 0;
+        }
+
+        case IDC_CFG_SPD_QUERY:
+            SendAtCmd(pData, "AT+SPD?");
+            return 0;
+
+        case IDC_CFG_PWR_SET: {
+            int sel = (int)SendMessageW(pData->hComboPwr, CB_GETCURSEL, 0, 0);
+            int val = sel + 24;
+            char cmd[32];
+            snprintf(cmd, sizeof(cmd), "AT+PWR=%d", val);
+            SendAtCmd(pData, cmd);
+            return 0;
+        }
+
+        case IDC_CFG_PWR_QUERY:
+            SendAtCmd(pData, "AT+PWR?");
+            return 0;
+
+        /* ---- Group 4: AT command ---- */
+        case IDC_CFG_SEND_BTN: {
+            wchar_t wbuf[256];
+            GetWindowTextW(pData->hEditAtCmd, wbuf, 256);
+            if (wcslen(wbuf) > 0) {
+                char abuf[256];
+                WideCharToMultiByte(CP_ACP, 0, wbuf, -1, abuf, 256, NULL, NULL);
+                SendAtCmd(pData, abuf);
+            }
+            return 0;
+        }
+
+        case IDC_CFG_QUERY_VER:
+            SendAtCmd(pData, "AT+VER?");
+            return 0;
+
+        /* ---- Group 5: Log ---- */
+        case IDC_CFG_CLEAR_BTN:
+            SetWindowTextA(pData->hLogEdit, "");
+            return 0;
+
+        default:
+            break;
+        }
+        break;
+
+    /* ---- WM_LORA_DEVICE_FOUND ---- */
+    case WM_LORA_DEVICE_FOUND: {
+        LoraDeviceMsg *msg = (LoraDeviceMsg *)lParam;
+        if (msg) {
+            wchar_t wbuf[128];
+
+            MultiByteToWideChar(CP_ACP, 0, msg->mac, -1, wbuf, 128);
+            SetWindowTextW(pData->hMacText, wbuf);
+
+            MultiByteToWideChar(CP_ACP, 0, msg->name, -1, wbuf, 128);
+            SetWindowTextW(pData->hDevText, wbuf);
+
+            MultiByteToWideChar(CP_ACP, 0, msg->sw, -1, wbuf, 128);
+            SetWindowTextW(pData->hSwText, wbuf);
+
+            char logLine[256];
+            snprintf(logLine, sizeof(logLine),
+                     "设备发现: MAC=%s, 设备=%s, SW=%s, IP=%s",
+                     msg->mac, msg->name, msg->sw, msg->ip);
+            AppendLog(pData, logLine);
+
+            free(msg);
+        }
+        return 0;
+    }
+
+    /* ---- WM_LORA_AT_RESPONSE ---- */
+    case WM_LORA_AT_RESPONSE: {
+        char *resp = (char *)lParam;
+        if (resp) {
+            AppendLog(pData, resp);
+            ParseAtResponse(pData, resp);
+            free(resp);
+        }
+        return 0;
+    }
+
+    /* ---- WM_LORA_NET_PARAMS ---- */
+    case WM_LORA_NET_PARAMS: {
+        LoraNetParamsMsg *msg = (LoraNetParamsMsg *)lParam;
+        if (msg) {
+            wchar_t wbuf[128];
+
+            MultiByteToWideChar(CP_ACP, 0, msg->ip, -1, wbuf, 128);
+            SetWindowTextW(pData->hEditIp, wbuf);
+
+            MultiByteToWideChar(CP_ACP, 0, msg->mask, -1, wbuf, 128);
+            SetWindowTextW(pData->hEditMask, wbuf);
+
+            MultiByteToWideChar(CP_ACP, 0, msg->gateway, -1, wbuf, 128);
+            SetWindowTextW(pData->hEditGw, wbuf);
+
+            char logLine[256];
+            snprintf(logLine, sizeof(logLine),
+                     "网络参数: IP=%s, 掩码=%s, 网关=%s",
+                     msg->ip, msg->mask, msg->gateway);
+            AppendLog(pData, logLine);
+
+            free(msg);
+        }
+        return 0;
+    }
+
+    /* ---- WM_LORA_LOG ---- */
+    case WM_LORA_LOG: {
+        char *text = (char *)lParam;
+        if (text) {
+            AppendLog(pData, text);
+            free(text);
+        }
+        return 0;
+    }
+
+    /* ---- Resize: adapt groups ---- */
+    case WM_SIZE: {
+        int cx = LOWORD(lParam);
+        int cy = HIWORD(lParam);
+        if (cx < 100 || cy < 100) return 0;
+
+        int margin = 14;
+        int grp1H = 94;
+        int grp2H = 140;
+        int grp3H = 130;
+        int grp4H = 56;
+
+        /* Group 1: full width, fixed height */
+        int grp1W = cx - 2 * margin;
+        if (grp1W < 200) grp1W = 200;
+        MoveWindow(pData->hGrpDev, margin, margin, grp1W, grp1H, TRUE);
+
+        /* Group 2: full width, fixed height */
+        int grp2Y = margin + grp1H + 6;
+        int grp2W = grp1W;
+        MoveWindow(pData->hGrpNet, margin, grp2Y, grp2W, grp2H, TRUE);
+
+        /* Group 3: full width, fixed height */
+        int grp3Y = grp2Y + grp2H + 6;
+        int grp3W = grp1W;
+        MoveWindow(pData->hGrpProto, margin, grp3Y, grp3W, grp3H, TRUE);
+
+        /* Group 4: full width, fixed height */
+        int grp4Y = grp3Y + grp3H + 6;
+        int grp4W = grp1W;
+        MoveWindow(pData->hGrpAt, margin, grp4Y, grp4W, grp4H, TRUE);
+
+        /* Group 5: full width, stretch height */
+        int grp5Y = grp4Y + grp4H + 6;
+        int grp5W = grp1W;
+        int grp5H = cy - grp5Y - margin;
+        if (grp5H < 80) grp5H = 80;
+        MoveWindow(pData->hGrpLog, margin, grp5Y, grp5W, grp5H, TRUE);
+
+        /* Log edit fills group interior */
+        int logX = margin + 10;
+        int logY = grp5Y + 24;
+        int logW = grp5W - 20;
+        int logH = grp5H - 58;
+        if (logW < 50) logW = 50;
+        if (logH < 30) logH = 30;
+        MoveWindow(pData->hLogEdit, logX, logY, logW, logH, TRUE);
+
+        /* Clear button */
+        MoveWindow(pData->hBtnClear,
+                   margin + grp5W - 100, grp5Y + grp5H - 32, 80, 26, TRUE);
+
+        return 0;
+    }
+
+    /* ---- Cleanup ---- */
+    case WM_DESTROY:
+        if (pData) {
+            if (pData->hFont)     DeleteObject(pData->hFont);
+            if (pData->hFontBold) DeleteObject(pData->hFontBold);
+            if (pData->hFontMono) DeleteObject(pData->hFontMono);
+            free(pData);
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+        }
+        return 0;
+    }
+
+    return DefWindowProcW(hwnd, uMsg, wParam, lParam);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Public API: Create / Destroy                                      */
+/* ------------------------------------------------------------------ */
+
+static const wchar_t *TAB_LORA_CFG_CLASS = L"TabLoraCfgClass";
+static int g_loraCfgClassRegistered = 0;
+
+HWND TabLoraCfg_Create(HWND hParent, HINSTANCE hInst, lora_sdk_t *sdk)
+{
+    if (!g_loraCfgClassRegistered) {
+        WNDCLASSEXW wc = { 0 };
+        wc.cbSize        = sizeof(wc);
+        wc.style         = CS_HREDRAW | CS_VREDRAW;
+        wc.lpfnWndProc   = TabLoraCfg_WndProc;
+        wc.hInstance     = hInst;
+        wc.hCursor       = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
+        wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+        wc.lpszClassName = TAB_LORA_CFG_CLASS;
+        RegisterClassExW(&wc);
+        g_loraCfgClassRegistered = 1;
+    }
+
+    RECT rcParent;
+    GetClientRect(hParent, &rcParent);
+    TabCtrl_AdjustRect(hParent, FALSE, &rcParent);
+
+    HWND hwnd = CreateWindowExW(
+        0,
+        TAB_LORA_CFG_CLASS,
+        L"",
+        WS_CHILD | WS_CLIPCHILDREN,
+        rcParent.left, rcParent.top,
+        rcParent.right - rcParent.left,
+        rcParent.bottom - rcParent.top,
+        hParent, NULL, hInst, sdk);
+
+    return hwnd;
+}
+
+void TabLoraCfg_Destroy(HWND hwnd)
+{
+    if (hwnd)
+        DestroyWindow(hwnd);
+}

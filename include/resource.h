@@ -74,22 +74,81 @@
 #define IDC_BUTTON_LORA_POWER           1239
 #define IDC_BUTTON_LORA_TEST            1240
 
-// Tab3: UART Shell 终端 (1300-1399)
-#define IDC_COMBO_UART_PORT             1301
-#define IDC_COMBO_UART_TERM_BAUD        1302
-#define IDC_BUTTON_UART_CONNECT         1303
-#define IDC_EDIT_UART_TERMINAL          1304
-#define IDC_BUTTON_UART_CLEAR           1305
-#define IDC_BUTTON_UART_SENDFILE        1306
+// Tab3: LoRa 数据 (1300-1399)
+#define IDC_LORA_IP_EDIT                1301
+#define IDC_LORA_PORT_EDIT              1302
+#define IDC_LORA_CONNECT_BTN            1303
+#define IDC_LORA_DISCONNECT_BTN         1304
+#define IDC_LORA_STATUS_TEXT            1305
+#define IDC_LORA_NID_TEXT               1306
+#define IDC_LORA_TEST_CHECK             1307
+#define IDC_LORA_X_TEXT                 1308
+#define IDC_LORA_Y_TEXT                 1309
+#define IDC_LORA_BTN_TEXT               1310
+#define IDC_LORA_RX_COUNT               1311
+#define IDC_LORA_TX_COUNT               1312
+#define IDC_LORA_ERR_COUNT              1313
+#define IDC_LORA_LOG_EDIT               1314
+#define IDC_LORA_SEND_EDIT              1315
+#define IDC_LORA_SEND_BTN               1316
+#define IDC_LORA_CLEAR_BTN              1317
+#define IDC_LORA_HISTORY_LIST           1318
+#define IDC_LORA_SAVE_CSV_BTN           1319
 
-// Tab4: TCP/UDP 网络终端 (1400-1499)
-#define IDC_RADIO_TCP                   1401
-#define IDC_RADIO_UDP                   1402
-#define IDC_EDIT_NET_HOST               1403
-#define IDC_EDIT_NET_PORT               1404
-#define IDC_BUTTON_NET_CONNECT          1405
-#define IDC_EDIT_NET_TERMINAL           1406
-#define IDC_BUTTON_NET_CLEAR            1407
+// Tab4: LoRa 配置 (1400-1499)
+#define IDC_CFG_SEARCH_BTN              1401
+#define IDC_CFG_GETNET_BTN              1402
+#define IDC_CFG_QUERY_GWID              1403
+#define IDC_CFG_QUERY_CSQ               1404
+#define IDC_CFG_MAC_TEXT                1405
+#define IDC_CFG_DEV_TEXT                1406
+#define IDC_CFG_SW_TEXT                 1407
+#define IDC_CFG_GWID_TEXT               1408
+#define IDC_CFG_CSQ_TEXT                1409
+#define IDC_CFG_DHCP_TEXT               1410
+#define IDC_CFG_DHCP_QUERY              1411
+#define IDC_CFG_DHCP_ON                 1412
+#define IDC_CFG_DHCP_OFF                1413
+#define IDC_CFG_IP_EDIT                 1414
+#define IDC_CFG_IP_SET                  1415
+#define IDC_CFG_IP_QUERY                1416
+#define IDC_CFG_MASK_EDIT               1417
+#define IDC_CFG_MASK_SET                1418
+#define IDC_CFG_MASK_QUERY              1419
+#define IDC_CFG_GW_EDIT                 1420
+#define IDC_CFG_GW_SET                  1421
+#define IDC_CFG_GW_QUERY                1422
+#define IDC_CFG_OPTION_COMBO            1423
+#define IDC_CFG_OPTION_SET              1424
+#define IDC_CFG_OPTION_QUERY            1425
+#define IDC_CFG_NWMODE_COMBO            1426
+#define IDC_CFG_NWMODE_SET              1427
+#define IDC_CFG_NWMODE_QUERY            1428
+#define IDC_CFG_TTMODE_COMBO            1429
+#define IDC_CFG_TTMODE_SET              1430
+#define IDC_CFG_TTMODE_QUERY            1431
+#define IDC_CFG_WMODE_COMBO             1432
+#define IDC_CFG_WMODE_SET               1433
+#define IDC_CFG_WMODE_QUERY             1434
+#define IDC_CFG_UPWID_TEXT              1435
+#define IDC_CFG_UPWID_QUERY             1436
+#define IDC_CFG_UPWID_ON                1437
+#define IDC_CFG_UPWID_OFF               1438
+#define IDC_CFG_CH_COMBO                1439
+#define IDC_CFG_CH_FREQ_COMBO           1440
+#define IDC_CFG_CH_SET                  1441
+#define IDC_CFG_CH_QUERY                1442
+#define IDC_CFG_SPD_COMBO               1443
+#define IDC_CFG_SPD_SET                 1444
+#define IDC_CFG_SPD_QUERY               1445
+#define IDC_CFG_PWR_COMBO               1446
+#define IDC_CFG_PWR_SET                 1447
+#define IDC_CFG_PWR_QUERY               1448
+#define IDC_CFG_CMD_EDIT                1449
+#define IDC_CFG_SEND_BTN                1450
+#define IDC_CFG_QUERY_VER               1451
+#define IDC_CFG_LOG_EDIT                1452
+#define IDC_CFG_CLEAR_BTN               1453
 
 // Custom messages
 #define WM_UPDATE_PROGRESS              (WM_APP + 1)
@@ -101,6 +160,15 @@
 #define WM_CAN_DISCONNECTED             (WM_APP + 7)
 #define WM_ADAPTER_CHANGED              (WM_APP + 8)
 #define WM_LOG_MESSAGE                  (WM_APP + 9)
+
+// LoRa SDK thread-marshaling messages (WM_APP + 10 ~ 16)
+#define WM_LORA_CONN_STATE              (WM_APP + 10)
+#define WM_LORA_FRAME                   (WM_APP + 11)
+#define WM_LORA_DEVICE_FOUND            (WM_APP + 12)
+#define WM_LORA_AT_RESPONSE             (WM_APP + 13)
+#define WM_LORA_NET_PARAMS              (WM_APP + 14)
+#define WM_LORA_LOG                     (WM_APP + 15)
+#define WM_LORA_HEX_DUMP                (WM_APP + 16)
 
 // Layout constants
 #define WINDOW_WIDTH                    1200

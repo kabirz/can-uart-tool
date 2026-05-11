@@ -14,6 +14,7 @@
 #include "can_manager.h"
 #include "uart_manager.h"
 #include "can_command.h"
+#include "lora_sdk.h"
 
 /* Forward declarations for tab page creation */
 extern HWND TabCanUpgrade_Create(HWND hParent, HINSTANCE hInst, CanManager *can_mgr, UartManager *uart_mgr, HWND hNotifyWnd);
@@ -21,13 +22,51 @@ extern void TabCanUpgrade_Destroy(HWND hwnd);
 extern HWND TabCanCommand_Create(HWND hParent, HINSTANCE hInst, CanCommand *cmd);
 extern void TabCanCommand_Destroy(HWND hwnd);
 extern void TabCanCommand_UpdateChannel(HWND hwnd, int channel);
+extern HWND TabLoraData_Create(HWND hParent, HINSTANCE hInst, lora_sdk_t *sdk);
+extern void TabLoraData_Destroy(HWND hwnd);
+extern HWND TabLoraCfg_Create(HWND hParent, HINSTANCE hInst, lora_sdk_t *sdk);
+extern void TabLoraCfg_Destroy(HWND hwnd);
 
-#define MAX_TABS 2
+#define MAX_TABS 4
 
 static const wchar_t *g_TabNames[MAX_TABS] = {
     L"固件升级",
-    L"CAN 命令"
+    L"CAN 命令",
+    L"LoRa 数据",
+    L"LoRa 配置"
 };
+
+/* LoRa SDK thread-marshaling payload structs */
+typedef struct {
+    uint32_t nid;
+    uint16_t len;
+    uint8_t  data[1]; /* variable-length */
+} LoraFrameMsg;
+
+typedef struct {
+    char mac[32];
+    char name[64];
+    char sw[32];
+    char ip[64];
+} LoraDeviceMsg;
+
+typedef struct {
+    char ip[64];
+    char mask[64];
+    char gateway[64];
+} LoraNetParamsMsg;
+
+typedef struct {
+    char prefix[64];
+    int  len;
+    uint8_t data[1]; /* variable-length */
+} LoraHexDumpMsg;
+
+/* Tab HWND pair passed as SDK callback user_data */
+typedef struct {
+    HWND hDataTab;
+    HWND hCfgTab;
+} LoraTabPair;
 
 typedef struct {
     HWND  hTabCtrl;
@@ -40,9 +79,114 @@ typedef struct {
     CanManager    *canMgr;
     UartManager   *uartMgr;
     CanCommand    *canCmd;
+    lora_sdk_t    *loraSdk;
+    LoraTabPair    loraTabs;
 } APP_DATA;
 
 static APP_DATA g_App;
+
+/* ------------------------------------------------------------------ */
+/*  LoRa SDK callbacks (fire from background threads)                 */
+/* ------------------------------------------------------------------ */
+
+static void cb_on_conn_state(void *ud, enum lora_sdk_conn_state state)
+{
+    LoraTabPair *tabs = (LoraTabPair *)ud;
+    if (tabs->hDataTab)
+        PostMessageW(tabs->hDataTab, WM_LORA_CONN_STATE, (WPARAM)state, 0);
+}
+
+static void cb_on_frame(void *ud, uint32_t nid,
+                         const uint8_t *payload, uint16_t payload_len)
+{
+    LoraTabPair *tabs = (LoraTabPair *)ud;
+    if (!tabs->hDataTab || !payload || payload_len == 0) return;
+    LoraFrameMsg *msg = (LoraFrameMsg *)malloc(
+        offsetof(LoraFrameMsg, data) + payload_len);
+    if (!msg) return;
+    msg->nid = nid;
+    msg->len = payload_len;
+    memcpy(msg->data, payload, payload_len);
+    PostMessageW(tabs->hDataTab, WM_LORA_FRAME, 0, (LPARAM)msg);
+}
+
+static void cb_on_device_found(void *ud, const char *mac,
+                                const char *device_name,
+                                const char *sw_version,
+                                const char *from_ip)
+{
+    LoraTabPair *tabs = (LoraTabPair *)ud;
+    if (!tabs->hCfgTab) return;
+    LoraDeviceMsg *msg = (LoraDeviceMsg *)calloc(1, sizeof(LoraDeviceMsg));
+    if (!msg) return;
+    if (mac)         strncpy(msg->mac, mac, 31);
+    if (device_name) strncpy(msg->name, device_name, 63);
+    if (sw_version)  strncpy(msg->sw, sw_version, 31);
+    if (from_ip)     strncpy(msg->ip, from_ip, 63);
+    PostMessageW(tabs->hCfgTab, WM_LORA_DEVICE_FOUND, 0, (LPARAM)msg);
+}
+
+static void cb_on_at_response(void *ud, const char *at_response)
+{
+    LoraTabPair *tabs = (LoraTabPair *)ud;
+    if (!tabs->hCfgTab || !at_response) return;
+    char *copy = _strdup(at_response);
+    if (copy) PostMessageW(tabs->hCfgTab, WM_LORA_AT_RESPONSE, 0, (LPARAM)copy);
+}
+
+static void cb_on_net_params(void *ud, const char *ip,
+                              const char *mask, const char *gateway)
+{
+    LoraTabPair *tabs = (LoraTabPair *)ud;
+    if (!tabs->hCfgTab) return;
+    LoraNetParamsMsg *msg = (LoraNetParamsMsg *)calloc(1, sizeof(LoraNetParamsMsg));
+    if (!msg) return;
+    if (ip)      strncpy(msg->ip, ip, 63);
+    if (mask)    strncpy(msg->mask, mask, 63);
+    if (gateway) strncpy(msg->gateway, gateway, 63);
+    PostMessageW(tabs->hCfgTab, WM_LORA_NET_PARAMS, 0, (LPARAM)msg);
+}
+
+static void cb_on_log(void *ud, const char *message)
+{
+    LoraTabPair *tabs = (LoraTabPair *)ud;
+    if (!message) return;
+    char *copy = _strdup(message);
+    if (!copy) return;
+    if (tabs->hDataTab)
+        PostMessageW(tabs->hDataTab, WM_LORA_LOG, 0, (LPARAM)copy);
+    /* Also forward to cfg tab with separate copy */
+    char *copy2 = _strdup(message);
+    if (copy2 && tabs->hCfgTab)
+        PostMessageW(tabs->hCfgTab, WM_LORA_LOG, 0, (LPARAM)copy2);
+}
+
+static void cb_on_hex_dump(void *ud, const char *prefix,
+                            const uint8_t *data, int len)
+{
+    LoraTabPair *tabs = (LoraTabPair *)ud;
+    if (!tabs->hDataTab || !data || len <= 0) return;
+    LoraHexDumpMsg *msg = (LoraHexDumpMsg *)malloc(
+        offsetof(LoraHexDumpMsg, data) + len);
+    if (!msg) return;
+    memset(msg->prefix, 0, sizeof(msg->prefix));
+    if (prefix) strncpy(msg->prefix, prefix, 63);
+    msg->len = len;
+    memcpy(msg->data, data, len);
+    PostMessageW(tabs->hDataTab, WM_LORA_HEX_DUMP, 0, (LPARAM)msg);
+}
+
+static void cb_on_error(void *ud, const char *message)
+{
+    LoraTabPair *tabs = (LoraTabPair *)ud;
+    if (!tabs->hDataTab || !message) return;
+    char *copy = _strdup(message);
+    if (copy) PostMessageW(tabs->hDataTab, WM_LORA_LOG, 0, (LPARAM)copy);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                           */
+/* ------------------------------------------------------------------ */
 
 /* Calculate window rect from desired client rect */
 static void CalcWindowRectFromClient(DWORD style, DWORD exStyle, int cx, int cy, RECT *prc)
@@ -67,13 +211,23 @@ static void CreateTabPages(HWND hTabCtrl, HWND hMainWnd, HINSTANCE hInst)
     GetClientRect(hTabCtrl, &rc);
     TabCtrl_AdjustRect(hTabCtrl, FALSE, &rc);
 
-    /* Tab 0: CAN/UART Firmware Upgrade (real page) */
+    /* Tab 0: CAN/UART Firmware Upgrade */
     g_App.hTabPages[0] = TabCanUpgrade_Create(hTabCtrl, hInst,
                                                g_App.canMgr, g_App.uartMgr,
                                                hMainWnd);
 
     /* Tab 1: CAN Command page */
     g_App.hTabPages[1] = TabCanCommand_Create(hTabCtrl, hInst, g_App.canCmd);
+
+    /* Tab 2: LoRa Data page */
+    g_App.hTabPages[2] = TabLoraData_Create(hTabCtrl, hInst, g_App.loraSdk);
+
+    /* Tab 3: LoRa Config page */
+    g_App.hTabPages[3] = TabLoraCfg_Create(hTabCtrl, hInst, g_App.loraSdk);
+
+    /* Store tab HWNDs for SDK callback routing */
+    g_App.loraTabs.hDataTab = g_App.hTabPages[2];
+    g_App.loraTabs.hCfgTab  = g_App.hTabPages[3];
 
     /* Show only the first tab page */
     ShowWindow(g_App.hTabPages[0], SW_SHOW);
@@ -276,8 +430,8 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
                         L"功能：\n"
                         L"  - CAN/UART 固件升级\n"
                         L"  - CAN 帧收发与监控\n"
-                        L"  - UART Shell 终端（ANSI 颜色）\n"
-                        L"  - TCP/UDP 网络终端\n\n"
+                        L"  - LoRa 网关数据通信\n"
+                        L"  - LoRa 网关配置管理\n\n"
                         L"依赖：PCAN-Basic SDK / IXXAT VCI SDK（运行时动态加载）\n"
                          L"编译：CMake + Visual Studio 2026",
                         L"关于 CAN/UART 工具",
@@ -346,6 +500,14 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
         g_App.hTabPages[0] = NULL;
         TabCanCommand_Destroy(g_App.hTabPages[1]);
         g_App.hTabPages[1] = NULL;
+        TabLoraData_Destroy(g_App.hTabPages[2]);
+        g_App.hTabPages[2] = NULL;
+        TabLoraCfg_Destroy(g_App.hTabPages[3]);
+        g_App.hTabPages[3] = NULL;
+
+        /* Clear callback routing pointers */
+        g_App.loraTabs.hDataTab = NULL;
+        g_App.loraTabs.hCfgTab  = NULL;
 
         if (g_App.hFont) {
             DeleteObject(g_App.hFont);
@@ -354,6 +516,12 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
         if (g_App.hTabFont) {
             DeleteObject(g_App.hTabFont);
             g_App.hTabFont = NULL;
+        }
+
+        /* Destroy LoRa SDK (stops background threads) */
+        if (g_App.loraSdk) {
+            lora_sdk_cleanup(g_App.loraSdk);
+            g_App.loraSdk = NULL;
         }
 
         /* Destroy managers */
@@ -428,6 +596,28 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     g_App.canCmd = CanCommand_Create(g_App.canHal, g_App.canDisp);
     if (!g_App.canCmd) {
         MessageBoxW(NULL, L"无法创建CAN命令模块", L"错误", MB_OK | MB_ICONERROR);
+        UartManager_Destroy(g_App.uartMgr);
+        CanManager_Destroy(g_App.canMgr);
+        return 1;
+    }
+
+    /* Create LoRa SDK */
+    lora_sdk_callbacks_t loraCbs = {0};
+    loraCbs.on_conn_state   = cb_on_conn_state;
+    loraCbs.on_frame        = cb_on_frame;
+    loraCbs.on_device_found = cb_on_device_found;
+    loraCbs.on_at_response  = cb_on_at_response;
+    loraCbs.on_net_params   = cb_on_net_params;
+    loraCbs.on_log          = cb_on_log;
+    loraCbs.on_hex_dump     = cb_on_hex_dump;
+    loraCbs.on_error        = cb_on_error;
+
+    g_App.loraTabs.hDataTab = NULL;
+    g_App.loraTabs.hCfgTab  = NULL;
+    g_App.loraSdk = lora_sdk_init(&loraCbs, &g_App.loraTabs);
+    if (!g_App.loraSdk) {
+        MessageBoxW(NULL, L"无法创建LoRa SDK", L"错误", MB_OK | MB_ICONERROR);
+        CanCommand_Destroy(g_App.canCmd);
         UartManager_Destroy(g_App.uartMgr);
         CanManager_Destroy(g_App.canMgr);
         return 1;
