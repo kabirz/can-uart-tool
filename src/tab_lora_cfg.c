@@ -1,5 +1,5 @@
 /**
- * Tab 4: LoRa 配置 (via UDP AT commands)
+ * Tab 2: LoRa 配置 (via UDP AT commands)
  *
  * Device discovery, network settings, LoRa protocol parameters,
  * AT command console, and response log.

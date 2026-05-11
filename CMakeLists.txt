@@ -51,9 +51,6 @@ endif()
 
 target_include_directories(can-uart-tool PRIVATE include)
 
-# Use static lora_sdk (no __declspec dllimport)
-target_compile_definitions(can-uart-tool PRIVATE LORA_SDK_STATIC)
-
 # --- LoRa SDK (static library for internal use, DLL for customers) ---
 add_subdirectory(loralib)
 

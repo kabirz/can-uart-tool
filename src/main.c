@@ -30,10 +30,10 @@ extern void TabLoraCfg_Destroy(HWND hwnd);
 #define MAX_TABS 4
 
 static const wchar_t *g_TabNames[MAX_TABS] = {
-    L"固件升级",
-    L"CAN 命令",
     L"LoRa 数据",
-    L"LoRa 配置"
+    L"LoRa 配置",
+    L"固件升级",
+    L"CAN 命令"
 };
 
 /* LoRa SDK thread-marshaling payload structs */
@@ -211,23 +211,23 @@ static void CreateTabPages(HWND hTabCtrl, HWND hMainWnd, HINSTANCE hInst)
     GetClientRect(hTabCtrl, &rc);
     TabCtrl_AdjustRect(hTabCtrl, FALSE, &rc);
 
-    /* Tab 0: CAN/UART Firmware Upgrade */
-    g_App.hTabPages[0] = TabCanUpgrade_Create(hTabCtrl, hInst,
+    /* Tab 0: LoRa Data page */
+    g_App.hTabPages[0] = TabLoraData_Create(hTabCtrl, hInst, g_App.loraSdk);
+
+    /* Tab 1: LoRa Config page */
+    g_App.hTabPages[1] = TabLoraCfg_Create(hTabCtrl, hInst, g_App.loraSdk);
+
+    /* Tab 2: CAN/UART Firmware Upgrade */
+    g_App.hTabPages[2] = TabCanUpgrade_Create(hTabCtrl, hInst,
                                                g_App.canMgr, g_App.uartMgr,
                                                hMainWnd);
 
-    /* Tab 1: CAN Command page */
-    g_App.hTabPages[1] = TabCanCommand_Create(hTabCtrl, hInst, g_App.canCmd);
-
-    /* Tab 2: LoRa Data page */
-    g_App.hTabPages[2] = TabLoraData_Create(hTabCtrl, hInst, g_App.loraSdk);
-
-    /* Tab 3: LoRa Config page */
-    g_App.hTabPages[3] = TabLoraCfg_Create(hTabCtrl, hInst, g_App.loraSdk);
+    /* Tab 3: CAN Command page */
+    g_App.hTabPages[3] = TabCanCommand_Create(hTabCtrl, hInst, g_App.canCmd);
 
     /* Store tab HWNDs for SDK callback routing */
-    g_App.loraTabs.hDataTab = g_App.hTabPages[2];
-    g_App.loraTabs.hCfgTab  = g_App.hTabPages[3];
+    g_App.loraTabs.hDataTab = g_App.hTabPages[0];
+    g_App.loraTabs.hCfgTab  = g_App.hTabPages[1];
 
     /* Show only the first tab page */
     ShowWindow(g_App.hTabPages[0], SW_SHOW);
@@ -413,8 +413,8 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
             ofn.Flags       = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
             ofn.lpstrTitle  = L"选择固件文件";
             if (GetOpenFileNameW(&ofn)) {
-                if (g_App.hTabPages[0]) {
-                    HWND hEdit = GetDlgItem(g_App.hTabPages[0], IDC_EDIT_FIRMWARE);
+                if (g_App.hTabPages[2]) {
+                    HWND hEdit = GetDlgItem(g_App.hTabPages[2], IDC_EDIT_FIRMWARE);
                     if (hEdit) SetWindowTextW(hEdit, fileName);
                 }
             }
@@ -440,18 +440,18 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
         }
         break;
 
-    /* CAN 连接共享：Tab0 通知 Tab1 更新 CAN 通道 */
+    /* CAN 连接共享：固件升级 Tab 通知 CAN 命令 Tab 更新通道 */
     case WM_CAN_CONNECTED:
-        if (g_App.hTabPages[1]) {
-            TabCanCommand_UpdateChannel(g_App.hTabPages[1], (int)wParam);
+        if (g_App.hTabPages[3]) {
+            TabCanCommand_UpdateChannel(g_App.hTabPages[3], (int)wParam);
             SendMessageW(g_App.hStatusBar, SB_SETTEXTW, 0,
                          (LPARAM)L"CAN 已连接 - 通道已同步到 CAN 命令页");
         }
         return 0;
 
     case WM_CAN_DISCONNECTED:
-        if (g_App.hTabPages[1]) {
-            TabCanCommand_UpdateChannel(g_App.hTabPages[1], CAN_HAL_INVALID_HANDLE);
+        if (g_App.hTabPages[3]) {
+            TabCanCommand_UpdateChannel(g_App.hTabPages[3], CAN_HAL_INVALID_HANDLE);
             SendMessageW(g_App.hStatusBar, SB_SETTEXTW, 0,
                          (LPARAM)L"CAN 已断开");
         }
@@ -484,9 +484,9 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
         CanDisp_Destroy(oldDisp);
         CanHal_Destroy(oldHal);
 
-        /* Tell Tab0 to refresh device list */
-        if (g_App.hTabPages[0])
-            PostMessage(g_App.hTabPages[0], WM_ADAPTER_CHANGED, 0, 0);
+        /* Tell firmware tab to refresh device list */
+        if (g_App.hTabPages[2])
+            PostMessage(g_App.hTabPages[2], WM_ADAPTER_CHANGED, 0, 0);
 
         wchar_t status[128];
         wsprintfW(status, L"适配器已切换到 %s", CanHal_GetName(newHal));
@@ -496,13 +496,13 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 
     case WM_DESTROY:
         /* Destroy tab pages explicitly */
-        TabCanUpgrade_Destroy(g_App.hTabPages[0]);
+        TabLoraData_Destroy(g_App.hTabPages[0]);
         g_App.hTabPages[0] = NULL;
-        TabCanCommand_Destroy(g_App.hTabPages[1]);
+        TabLoraCfg_Destroy(g_App.hTabPages[1]);
         g_App.hTabPages[1] = NULL;
-        TabLoraData_Destroy(g_App.hTabPages[2]);
+        TabCanUpgrade_Destroy(g_App.hTabPages[2]);
         g_App.hTabPages[2] = NULL;
-        TabLoraCfg_Destroy(g_App.hTabPages[3]);
+        TabCanCommand_Destroy(g_App.hTabPages[3]);
         g_App.hTabPages[3] = NULL;
 
         /* Clear callback routing pointers */

@@ -1,5 +1,5 @@
 /**
- * Tab 3: LoRa Data Page
+ * Tab 1: LoRa Data Page
  *
  * LoRa gateway TCP connection, telemetry display, raw log, and
  * history list view. Uses loralib SDK (lora_sdk.h) for all

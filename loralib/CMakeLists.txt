@@ -12,7 +12,7 @@ set(LORA_SDK_SOURCES
 # --- Static library (for internal use) ---
 add_library(lora_sdk_static STATIC ${LORA_SDK_SOURCES})
 
-target_compile_definitions(lora_sdk_static PRIVATE
+target_compile_definitions(lora_sdk_static PUBLIC
     LORA_SDK_STATIC
     _CRT_SECURE_NO_WARNINGS
 )

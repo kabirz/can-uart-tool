@@ -1,5 +1,5 @@
 /**
- * Tab 2: CAN Command Sending Page
+ * Tab 4: CAN Command Sending Page
  *
  * Custom frame sending, LoRa configuration, and bus monitor.
  * LoRa command codes match device firmware mod-can.h exactly:
