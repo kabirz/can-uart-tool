@@ -1,5 +1,5 @@
 /**
- * CAN/UART Tool - Main Window with Tab Control
+ * ModHandler PC Tool - Main Window with Tab Control
  */
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -217,7 +217,7 @@ static void CreateTabPages(HWND hTabCtrl, HWND hMainWnd, HINSTANCE hInst)
     /* Tab 1: LoRa Config page */
     g_App.hTabPages[1] = TabLoraCfg_Create(hTabCtrl, hInst, g_App.loraSdk);
 
-    /* Tab 2: CAN/UART Firmware Upgrade */
+    /* Tab 2: Firmware Upgrade */
     g_App.hTabPages[2] = TabCanUpgrade_Create(hTabCtrl, hInst,
                                                g_App.canMgr, g_App.uartMgr,
                                                hMainWnd);
@@ -425,16 +425,16 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
             return 0;
         case IDM_HELP_ABOUT:
             MessageBoxW(hWnd,
-                        L"CAN/UART 工具 v0.1.2\n"
-                        L"基于 Win32 API 的 CAN/UART 调试工具\n\n"
+                        L"ModHandler PC Tool v0.2.0\n"
+                        L"基于 Win32 API 的激光测距系统 PC 端配套工具\n\n"
                         L"功能：\n"
-                        L"  - CAN/UART 固件升级\n"
+                        L"  - LoRa 网关数据通信与测试\n"
+                        L"  - LoRa 网关配置管理\n"
                         L"  - CAN 帧收发与监控\n"
-                        L"  - LoRa 网关数据通信\n"
-                        L"  - LoRa 网关配置管理\n\n"
+                        L"  - 固件升级\n\n"
                         L"依赖：PCAN-Basic SDK / IXXAT VCI SDK（运行时动态加载）\n"
                          L"编译：CMake + Visual Studio 2026",
-                        L"关于 CAN/UART 工具",
+                        L"关于 ModHandler PC Tool",
                         MB_OK | MB_ICONINFORMATION);
             return 0;
         }
@@ -632,7 +632,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     wc.hIcon         = LoadIconW(hInstance, MAKEINTRESOURCEW(IDI_APPICON));
     wc.hCursor       = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-    wc.lpszClassName = L"CanUartToolClass";
+    wc.lpszClassName = L"ModHandlerPcToolClass";
     wc.hIconSm       = wc.hIcon;
     RegisterClassExW(&wc);
 
@@ -662,8 +662,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
     hWnd = CreateWindowExW(
         dwExStyle,
-        L"CanUartToolClass",
-        L"CAN/UART 工具",
+        L"ModHandlerPcToolClass",
+        L"ModHandler PC Tool",
         dwStyle,
         posX, posY,
         winW, winH,

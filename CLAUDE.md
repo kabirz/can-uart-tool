@@ -1,8 +1,8 @@
-# CLAUDE.md — CAN/UART 工具项目指南
+# CLAUDE.md — ModHandler PC Tool 项目指南
 
 ## 项目概述
 
-Win32 桌面应用，C 语言，基于 Tab 控件的 CAN/UART 调试工具。使用 PCAN-Basic 库进行 CAN 通信，Win32 API 实现 GUI。
+Win32 桌面应用，C 语言，基于 Tab 控件的激光测距系统 PC 端配套工具。集成 LoRa 网关通信、CAN 总线调试和固件升级功能。
 
 ## 编译命令
 
@@ -15,7 +15,7 @@ cmake --build build --config Release
 rm -rf build && cmake -B build -G "Visual Studio 18 2026" -A x64 && cmake --build build --config Release
 ```
 
-输出：`build/Release/can-uart-tool.exe`
+输出：`build/Release/modhandler-pc-tool.exe`
 
 ## 架构
 

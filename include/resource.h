@@ -19,7 +19,7 @@
 // Tab Control
 #define IDC_TAB_CONTROL                 1001
 
-// Tab1: CAN/UART 固件升级 (1100-1199)
+// Tab1: 固件升级 (1100-1199)
 #define IDC_COMBO_TRANSPORT             1101
 #define IDC_COMBO_CHANNEL               1102
 #define IDC_COMBO_BAUDRATE              1103

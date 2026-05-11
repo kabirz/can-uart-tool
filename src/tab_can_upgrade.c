@@ -1,5 +1,5 @@
 /**
- * Tab 3: CAN/UART Firmware Upgrade Page
+ * Tab 2: Firmware Upgrade Page
  *
  * Replicates the reference project's main.c firmware upgrade functionality
  * as a tab page child window.

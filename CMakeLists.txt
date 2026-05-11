@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(CanUartTool VERSION 1.0.0 LANGUAGES C)
+project(ModHandlerPcTool VERSION 0.2.0 LANGUAGES C)
 
 add_compile_definitions(UNICODE _UNICODE)
 
@@ -22,36 +22,36 @@ set(RESOURCES
     resources/resource.rc
 )
 
-add_executable(can-uart-tool
+add_executable(modhandler-pc-tool
     ${SOURCES}
     ${RESOURCES}
 )
 
 if(MINGW)
-    target_compile_options(can-uart-tool PRIVATE -Os -ffunction-sections -fdata-sections)
-    target_link_options(can-uart-tool PRIVATE
+    target_compile_options(modhandler-pc-tool PRIVATE -Os -ffunction-sections -fdata-sections)
+    target_link_options(modhandler-pc-tool PRIVATE
         -mwindows -static-libgcc -s -Wl,--gc-sections -Wl,--strip-all
     )
 elseif(MSVC)
-    target_compile_options(can-uart-tool PRIVATE /utf-8)
-    set_target_properties(can-uart-tool PROPERTIES
+    target_compile_options(modhandler-pc-tool PRIVATE /utf-8)
+    set_target_properties(modhandler-pc-tool PROPERTIES
         LINK_FLAGS "/SUBSYSTEM:WINDOWS /MANIFEST:NO"
     )
 endif()
 
 if(MINGW)
-    target_link_libraries(can-uart-tool PRIVATE
+    target_link_libraries(modhandler-pc-tool PRIVATE
         -lcomctl32 -lcomdlg32 -lgdi32 -lsetupapi -lws2_32
     )
 elseif(MSVC)
-    target_link_libraries(can-uart-tool PRIVATE
+    target_link_libraries(modhandler-pc-tool PRIVATE
         comctl32 comdlg32 gdi32 setupapi ws2_32
     )
 endif()
 
-target_include_directories(can-uart-tool PRIVATE include)
+target_include_directories(modhandler-pc-tool PRIVATE include)
 
 # --- LoRa SDK (static library for internal use, DLL for customers) ---
 add_subdirectory(loralib)
 
-target_link_libraries(can-uart-tool PRIVATE lora_sdk_static)
+target_link_libraries(modhandler-pc-tool PRIVATE lora_sdk_static)
