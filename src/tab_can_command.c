@@ -5,7 +5,11 @@
  * LoRa command codes match device firmware mod-can.h exactly:
  *   SET_MODE=0x01, QUERY_MODE=0x02, SET_CH1=0x03, QUERY_CH1=0x04,
  *   SET_CH2=0x05, QUERY_CH2=0x06, QUERY_NID=0x07, SET_NID=0x08,
- *   QUERY_GWID=0x09, SET_GWID=0x0A, QUERY_PNUM=0x0B, SET_PNUM=0x0C
+ *   QUERY_GWID=0x09, SET_GWID=0x0A, QUERY_PNUM=0x0B, SET_PNUM=0x0C,
+ *   SET_TEST=0x0D, SET_POWER=0x0F
+ *
+ * Response format (0x106): data[0] = command code (self-identifying),
+ * remaining bytes carry command-specific data.
  */
 #include <windows.h>
 #include <commctrl.h>
@@ -28,7 +32,7 @@
 #define CANID_LORA_RX         0x105
 #define CANID_LORA_TX         0x106
 
-/* LoRa config commands – match device mod-can.h exactly */
+/* LoRa config commands - match device mod-can.h exactly */
 #define LORA_CMD_SET_MODE     0x01
 #define LORA_CMD_QUERY_MODE   0x02
 #define LORA_CMD_SET_CH1      0x03
@@ -41,6 +45,8 @@
 #define LORA_CMD_SET_GWID     0x0A
 #define LORA_CMD_QUERY_PNUM   0x0B
 #define LORA_CMD_SET_PNUM     0x0C
+#define LORA_CMD_SET_TEST     0x0D
+#define LORA_CMD_SET_POWER    0x0F
 
 /* ------------------------------------------------------------------ */
 /*  Per-window instance data (stored via GWLP_USERDATA)                */
@@ -49,6 +55,10 @@ typedef struct {
     CanCommand  *canCmd;
     int          channel;
     int          isActive;
+
+    /* LoRa state tracking */
+    int          loraPowered;    /* 1 = powered on, 0 = off/unknown */
+    int          loraTestMode;   /* 1 = test mode active */
 
     /* Frame config controls */
     HWND hEditCanId;
@@ -65,6 +75,8 @@ typedef struct {
     HWND hBtnClearMonitor;
 
     /* LoRa config controls */
+    HWND hBtnLoraPower;
+    HWND hBtnLoraTest;
     HWND hComboProt;
     HWND hComboMode;
     HWND hComboSpd1;
@@ -75,9 +87,23 @@ typedef struct {
     HWND hEditNid;
     HWND hEditGwid;
     HWND hLabelLoraStatus;
-    uint8_t loraCmdQueue[8];
-    int loraCmdQueueHead;
-    int loraCmdQueueTail;
+
+    /* LoRa set buttons (need enable/disable with power) */
+    HWND hBtnQueryCfg;
+    HWND hBtnSetMode;
+    HWND hBtnSetCh1;
+    HWND hBtnSetCh2;
+    HWND hBtnSetPnum;
+    HWND hBtnQueryNid;
+    HWND hBtnQueryGwid;
+    HWND hBtnSetGwid;
+
+    /* Resizable group boxes */
+    HWND hGrpLora;      /* Group 2: LoRa Config (stretches width) */
+    HWND hGrpMonitor;   /* Group 3: Bus Monitor (stretches both) */
+
+    /* Pending query counter for "query all" batch */
+    int  pendingQueryCount;
 
     /* Fonts */
     HFONT hFont;
@@ -175,12 +201,6 @@ static void AppendMonitorLine(TAB_CMD_DATA *pData, int is_tx,
         }
     }
 
-    /* LoRa response: show OK/FAIL */
-    if (can_id == CANID_LORA_TX && dlc > 0) {
-        pos += wsprintfW(line + pos, L" %s",
-                         data[0] == 0x00 ? L"OK" : L"FAIL");
-    }
-
     wcscat(line + pos, L"\r\n");
 
     int len = GetWindowTextLengthW(hMon);
@@ -220,37 +240,170 @@ static void CanFrameCb(uint32_t id, const uint8_t *data,
     PostMessage(hwnd, WM_CAN_FRAME_RECEIVED, 0, (LPARAM)fi);
 }
 
-/* Update enable/disable state of controls based on channel */
-static void UpdateControlStates(TAB_CMD_DATA *pData)
+/* ------------------------------------------------------------------ */
+/*  LoRa power state: enable/disable all LoRa config controls         */
+/* ------------------------------------------------------------------ */
+static void UpdateLoraControlStates(TAB_CMD_DATA *pData)
 {
     BOOL connected = (pData->channel != CAN_HAL_INVALID_HANDLE);
-    EnableWindow(pData->hBtnSend, connected);
-    EnableWindow(pData->hEditCanId, connected);
+    BOOL powered   = pData->loraPowered;
+
+    /* Power/test buttons: only need CAN connection */
+    EnableWindow(pData->hBtnLoraPower, connected);
+    EnableWindow(pData->hBtnLoraTest, connected && powered);
+    SetWindowTextW(pData->hBtnLoraPower,
+                   powered ? L"LoRa 断电" : L"LoRa 上电");
+    SetWindowTextW(pData->hBtnLoraTest,
+                   pData->loraTestMode ? L"退出测试" : L"测试模式");
+
+    /* All other LoRa controls: need CAN connection AND LoRa powered */
+    BOOL loraReady = connected && powered;
+    EnableWindow(pData->hComboProt,   loraReady);
+    EnableWindow(pData->hComboMode,   loraReady);
+    EnableWindow(pData->hComboSpd1,   loraReady);
+    EnableWindow(pData->hEditCh1,     loraReady);
+    EnableWindow(pData->hComboSpd2,   loraReady);
+    EnableWindow(pData->hEditCh2,     loraReady);
+    EnableWindow(pData->hComboPnum,   loraReady);
+    EnableWindow(pData->hEditNid,     loraReady);
+    EnableWindow(pData->hEditGwid,    loraReady);
+    EnableWindow(pData->hBtnQueryCfg, loraReady);
+    EnableWindow(pData->hBtnSetMode,  loraReady);
+    EnableWindow(pData->hBtnSetCh1,   loraReady);
+    EnableWindow(pData->hBtnSetCh2,   loraReady);
+    EnableWindow(pData->hBtnSetPnum,  loraReady);
+    EnableWindow(pData->hBtnQueryNid, loraReady);
+    EnableWindow(pData->hBtnQueryGwid,loraReady);
+    EnableWindow(pData->hBtnSetGwid,  loraReady);
+
+    /* Frame send controls: only need CAN connection */
+    EnableWindow(pData->hBtnSend,     connected);
+    EnableWindow(pData->hEditCanId,   connected);
     EnableWindow(pData->hEditCanData, connected);
-    EnableWindow(pData->hComboProt, connected);
-    EnableWindow(pData->hComboMode, connected);
-    EnableWindow(pData->hComboSpd1, connected);
-    EnableWindow(pData->hEditCh1, connected);
-    EnableWindow(pData->hComboSpd2, connected);
-    EnableWindow(pData->hEditCh2, connected);
-    EnableWindow(pData->hComboPnum, connected);
-    EnableWindow(pData->hEditNid, connected);
-    EnableWindow(pData->hEditGwid, connected);
 }
 
-/* LoRa command FIFO queue helpers */
-static void LoraCmdQueue_Push(TAB_CMD_DATA *pData, uint8_t cmd)
+/* Update enable/disable state of all controls */
+static void UpdateControlStates(TAB_CMD_DATA *pData)
 {
-    pData->loraCmdQueue[pData->loraCmdQueueTail] = cmd;
-    pData->loraCmdQueueTail = (pData->loraCmdQueueTail + 1) % 8;
+    UpdateLoraControlStates(pData);
 }
 
-static int LoraCmdQueue_Pop(TAB_CMD_DATA *pData, uint8_t *cmd)
+/* ------------------------------------------------------------------ */
+/*  GWID Input Dialog (modal popup for hex value entry)                */
+/* ------------------------------------------------------------------ */
+typedef struct {
+    wchar_t value[32];   /* Input/output: hex string */
+    int     confirmed;   /* Output: 1 = OK pressed */
+    HFONT   hFont;       /* Dialog font, cleanup before EndDialog */
+} GwidInputData;
+
+static INT_PTR CALLBACK GwidInputDlgProc(HWND hDlg, UINT uMsg,
+                                          WPARAM wParam, LPARAM lParam)
 {
-    if (pData->loraCmdQueueHead == pData->loraCmdQueueTail) return 0;
-    *cmd = pData->loraCmdQueue[pData->loraCmdQueueHead];
-    pData->loraCmdQueueHead = (pData->loraCmdQueueHead + 1) % 8;
-    return 1;
+    GwidInputData *data = (GwidInputData *)GetWindowLongPtrW(hDlg, GWLP_USERDATA);
+
+    switch (uMsg) {
+    case WM_INITDIALOG: {
+        data = (GwidInputData *)lParam;
+        SetWindowLongPtrW(hDlg, GWLP_USERDATA, (LONG_PTR)data);
+
+        HINSTANCE hInst = GetModuleHandleW(NULL);
+        data->hFont = CreateFontW(
+            24, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
+            L"Microsoft YaHei");
+
+        /* Label */
+        HWND hLbl = CreateWindowExW(0, L"STATIC",
+            L"请输入 GWID (十六进制):",
+            WS_CHILD | WS_VISIBLE,
+            16, 14, 260, 24, hDlg, NULL, hInst, NULL);
+        SendMessageW(hLbl, WM_SETFONT, (WPARAM)data->hFont, TRUE);
+
+        /* Edit control */
+        HWND hEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", data->value,
+            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+            16, 46, 260, 28, hDlg, (HMENU)1001, hInst, NULL);
+        SendMessageW(hEdit, WM_SETFONT, (WPARAM)data->hFont, TRUE);
+
+        /* OK button (default) */
+        HWND hOk = CreateWindowExW(0, L"BUTTON", L"确定",
+            WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+            80, 86, 80, 30, hDlg, (HMENU)IDOK, hInst, NULL);
+        SendMessageW(hOk, WM_SETFONT, (WPARAM)data->hFont, TRUE);
+
+        /* Cancel button */
+        HWND hCancel = CreateWindowExW(0, L"BUTTON", L"取消",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            180, 86, 80, 30, hDlg, (HMENU)IDCANCEL, hInst, NULL);
+        SendMessageW(hCancel, WM_SETFONT, (WPARAM)data->hFont, TRUE);
+
+        SetFocus(hEdit);
+        return FALSE;  /* We set focus explicitly */
+    }
+
+    case WM_COMMAND:
+        switch (LOWORD(wParam)) {
+        case IDOK:
+            GetWindowTextW(GetDlgItem(hDlg, 1001), data->value, 32);
+            data->confirmed = 1;
+            if (data->hFont) { DeleteObject(data->hFont); data->hFont = NULL; }
+            EndDialog(hDlg, IDOK);
+            return TRUE;
+        case IDCANCEL:
+            data->confirmed = 0;
+            if (data->hFont) { DeleteObject(data->hFont); data->hFont = NULL; }
+            EndDialog(hDlg, IDCANCEL);
+            return TRUE;
+        }
+        break;
+
+    case WM_CLOSE:
+        data->confirmed = 0;
+        if (data->hFont) { DeleteObject(data->hFont); data->hFont = NULL; }
+        EndDialog(hDlg, IDCANCEL);
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+/* Show modal GWID input dialog. Returns 1 if confirmed, 0 if cancelled. */
+static int ShowGwidInputDialog(HWND hParent, wchar_t *buf, int bufSize)
+{
+    /* Build minimal DLGTEMPLATE in memory */
+    struct {
+        DLGTEMPLATE hdr;
+        WORD  menu;          /* 0 = no menu */
+        WORD  cls;           /* 0 = default dialog class */
+        wchar_t title[8];
+    } tmpl;
+
+    memset(&tmpl, 0, sizeof(tmpl));
+    tmpl.hdr.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER;
+    tmpl.hdr.cdit  = 0;     /* Controls created in WM_INITDIALOG */
+    tmpl.hdr.cx    = 180;   /* dialog units */
+    tmpl.hdr.cy    = 90;
+    wcscpy(tmpl.title, L"设置 GWID");
+
+    GwidInputData data = {0};
+    wcsncpy(data.value, buf, 31);
+    data.value[31] = L'\0';
+
+    DialogBoxIndirectParamW(
+        GetModuleHandleW(NULL),
+        (LPCDLGTEMPLATE)&tmpl,
+        hParent,
+        GwidInputDlgProc,
+        (LPARAM)&data);
+
+    if (data.confirmed) {
+        wcsncpy(buf, data.value, bufSize - 1);
+        buf[bufSize - 1] = L'\0';
+    }
+
+    return data.confirmed;
 }
 
 /* Parse hex data bytes from a space-separated string, return count */
@@ -280,6 +433,8 @@ static int ParseHexData(const wchar_t *str, uint8_t *out, int maxBytes)
  *   SET_PNUM(0x0C): data[0]=0x0C, data[1]=pnum
  *   SET_NID(0x08):  data[0]=0x08, data[4-7]=nid(BE32)
  *   SET_GWID(0x0A): data[0]=0x0A, data[4-7]=gwid(BE32)
+ *   SET_TEST(0x0D): data[0]=0x0D, data[1]=1/0
+ *   SET_POWER(0x0F):data[0]=0x0F, data[1]=1/0
  */
 static void SendLoraCommand(TAB_CMD_DATA *pData, uint8_t cmd)
 {
@@ -291,44 +446,60 @@ static void SendLoraCommand(TAB_CMD_DATA *pData, uint8_t cmd)
 
     wchar_t buf[32];
 
-    if (cmd == LORA_CMD_SET_MODE) {
+    switch (cmd) {
+    case LORA_CMD_SET_MODE: {
         int prot = (int)SendMessageW(pData->hComboProt, CB_GETCURSEL, 0, 0);
         int mode = (int)SendMessageW(pData->hComboMode, CB_GETCURSEL, 0, 0);
         data[1] = (uint8_t)((prot << 4) | (mode & 0x0F));
         dlc = 2;
-    } else if (cmd == LORA_CMD_SET_CH1) {
+        break;
+    }
+    case LORA_CMD_SET_CH1: {
         int spd_idx = (int)SendMessageW(pData->hComboSpd1, CB_GETCURSEL, 0, 0);
         data[1] = (uint8_t)(spd_idx + 4);
         GetWindowTextW(pData->hEditCh1, buf, 32);
         uint16_t ch = (uint16_t)wcstoul(buf, NULL, 10);
         PutBE16(ch, &data[2]);
         dlc = 4;
-    } else if (cmd == LORA_CMD_SET_CH2) {
+        break;
+    }
+    case LORA_CMD_SET_CH2: {
         int spd_idx = (int)SendMessageW(pData->hComboSpd2, CB_GETCURSEL, 0, 0);
         data[1] = (uint8_t)(spd_idx + 4);
         GetWindowTextW(pData->hEditCh2, buf, 32);
         uint16_t ch = (uint16_t)wcstoul(buf, NULL, 10);
         PutBE16(ch, &data[2]);
         dlc = 4;
-    } else if (cmd == LORA_CMD_SET_PNUM) {
+        break;
+    }
+    case LORA_CMD_SET_PNUM: {
         int pnum = (int)SendMessageW(pData->hComboPnum, CB_GETCURSEL, 0, 0);
         data[1] = (uint8_t)pnum;
         dlc = 2;
-    } else if (cmd == LORA_CMD_SET_NID) {
-        GetWindowTextW(pData->hEditNid, buf, 32);
-        uint32_t nid = (uint32_t)wcstoul(buf, NULL, 16);
-        PutBE32(nid, &data[4]);
-        dlc = 8;
-    } else if (cmd == LORA_CMD_SET_GWID) {
+        break;
+    }
+    case LORA_CMD_SET_GWID: {
         GetWindowTextW(pData->hEditGwid, buf, 32);
         uint32_t gwid = (uint32_t)wcstoul(buf, NULL, 16);
         PutBE32(gwid, &data[4]);
         dlc = 8;
+        break;
+    }
+    case LORA_CMD_SET_TEST: {
+        data[1] = pData->loraTestMode ? 0 : 1;
+        dlc = 2;
+        break;
+    }
+    case LORA_CMD_SET_POWER: {
+        data[1] = pData->loraPowered ? 0 : 1;
+        dlc = 2;
+        break;
+    }
+    default:
+        break;
     }
 
-    LoraCmdQueue_Push(pData, cmd);
     SetWindowTextW(pData->hLabelLoraStatus, L"等待响应...");
-
     CanCommand_SendFrame(pData->canCmd, CANID_LORA_RX, data, dlc, 0, 0);
 }
 
@@ -357,8 +528,15 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         pData->canCmd = (CanCommand *)cs->lpCreateParams;
         pData->channel = CAN_HAL_INVALID_HANDLE;
         pData->isActive = 0;
-        pData->loraCmdQueueHead = 0;
-        pData->loraCmdQueueTail = 0;
+        pData->loraPowered = 0;
+        pData->loraTestMode = 0;
+        pData->pendingQueryCount = 0;
+
+        /* Get actual client area instead of hardcoded constants */
+        RECT rcClient;
+        GetClientRect(hwnd, &rcClient);
+        int pageW = rcClient.right  > 0 ? rcClient.right  : WINDOW_WIDTH;
+        int pageH = rcClient.bottom > 0 ? rcClient.bottom : WINDOW_HEIGHT;
 
         /* Create fonts */
         pData->hFont = CreateFontW(
@@ -451,16 +629,41 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         /* ========== Group 2: LoRa Configuration (right, upper) ========== */
         int grp2X = grp1X + grp1W + 10;
         int grp2Y = grp1Y;
-        int grp2W = WINDOW_WIDTH - margin - grp2X - margin;
+        int grp2W = pageW - margin - grp2X - margin;
         int grp2H = grp1H;
-        CreateWindowExW(0, L"BUTTON", L"LoRa 配置",
+        pData->hGrpLora = CreateWindowExW(0, L"BUTTON", L"LoRa 配置",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             grp2X, grp2Y, grp2W, grp2H, hwnd, NULL, hInst, NULL);
 
         cx = grp2X + 14;
         cy = grp2Y + 30;
 
-        /* Row 1: Protocol / Mode (same line) */
+        /* Row 1: Power + Test + Query */
+        int bw = 100, bh = 28, bg = 8;
+
+        pData->hBtnLoraPower = CreateWindowExW(0, L"BUTTON",
+            L"LoRa 上电",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            cx, cy, bw + 20, bh,
+            hwnd, (HMENU)IDC_BUTTON_LORA_POWER, hInst, NULL);
+        SendMessageW(pData->hBtnLoraPower, WM_SETFONT, (WPARAM)pData->hFontBold, TRUE);
+
+        pData->hBtnLoraTest = CreateWindowExW(0, L"BUTTON",
+            L"测试模式",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            cx + bw + 28, cy, bw + 10, bh,
+            hwnd, (HMENU)IDC_BUTTON_LORA_TEST, hInst, NULL);
+        SendMessageW(pData->hBtnLoraTest, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+
+        pData->hBtnQueryCfg = CreateWindowExW(0, L"BUTTON", L"查询配置",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            cx + 2 * (bw + 18), cy, bw, bh,
+            hwnd, (HMENU)IDC_BUTTON_LORA_QUERY_CFG, hInst, NULL);
+        SendMessageW(pData->hBtnQueryCfg, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+
+        cy += bh + 8;
+
+        /* Row 2: Protocol / Mode (same line) */
         int llW = 56, cbW = 150, cbGap = 20;
 
         CreateLabel(hwnd, hInst, -1, cx, cy + 3, llW, 22,
@@ -490,7 +693,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         SendMessageW(pData->hComboMode, CB_SETCURSEL, 1, 0);
         cy += lineH;
 
-        /* Row 2: CH1 (SPD + CH) */
+        /* Row 3: CH1 (SPD + CH) */
         CreateLabel(hwnd, hInst, -1, cx, cy + 3, llW, 22,
             L"CH1:", pData->hFont);
         CreateLabel(hwnd, hInst, -1, cx + llW + 4, cy + 3, 56, 22,
@@ -517,7 +720,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
             L"(4100~5100KHz)", pData->hFont);
         cy += lineH;
 
-        /* Row 3: CH2 (SPD + CH) */
+        /* Row 4: CH2 (SPD + CH) */
         CreateLabel(hwnd, hInst, -1, cx, cy + 3, llW, 22,
             L"CH2:", pData->hFont);
         CreateLabel(hwnd, hInst, -1, cx + llW + 4, cy + 3, 56, 22,
@@ -544,7 +747,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
             L"(4100~5100KHz)", pData->hFont);
         cy += lineH;
 
-        /* Row 4: PNUM */
+        /* Row 5: PNUM + GWID */
         CreateLabel(hwnd, hInst, -1, cx, cy + 3, llW, 22,
             L"PNUM:", pData->hFont);
         pData->hComboPnum = CreateWindowExW(0, L"COMBOBOX", L"",
@@ -559,89 +762,75 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
 
         CreateLabel(hwnd, hInst, -1, ox2, cy + 3, llW, 22,
             L"GWID:", pData->hFont);
-        pData->hEditGwid = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"00000000",
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-            ox2 + llW + 4, cy, 120, 24,
+        pData->hEditGwid = CreateWindowExW(0, L"STATIC", L"00000000",
+            WS_CHILD | WS_VISIBLE | SS_LEFT,
+            ox2 + llW + 4, cy + 3, 120, 22,
             hwnd, (HMENU)IDC_EDIT_LORA_GWID, hInst, NULL);
         SendMessageW(pData->hEditGwid, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
         cy += lineH;
 
-        /* Row 5: NID */
+        /* Row 6: NID (read-only label) */
         CreateLabel(hwnd, hInst, -1, cx, cy + 3, llW, 22,
             L"NID:", pData->hFont);
-        pData->hEditNid = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"00000000",
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-            cx + llW + 4, cy, 120, 24,
+        pData->hEditNid = CreateWindowExW(0, L"STATIC", L"00000000",
+            WS_CHILD | WS_VISIBLE | SS_LEFT,
+            cx + llW + 4, cy + 3, 120, 22,
             hwnd, (HMENU)IDC_EDIT_LORA_NID, hInst, NULL);
         SendMessageW(pData->hEditNid, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
         cy += lineH + 4;
 
-        /* Row 6: Config buttons */
-        int bw = 100, bh = 28, bg = 8;
-        HWND hBtn;
+        /* Row 7: Set buttons */
 
-        hBtn = CreateWindowExW(0, L"BUTTON", L"查询配置",
+        pData->hBtnSetMode = CreateWindowExW(0, L"BUTTON", L"设置模式",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             cx, cy, bw, bh,
-            hwnd, (HMENU)IDC_BUTTON_LORA_QUERY_CFG, hInst, NULL);
-        SendMessageW(hBtn, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+            hwnd, (HMENU)IDC_BUTTON_LORA_SET_MODE, hInst, NULL);
+        SendMessageW(pData->hBtnSetMode, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
-        hBtn = CreateWindowExW(0, L"BUTTON", L"设置模式",
+        pData->hBtnSetCh1 = CreateWindowExW(0, L"BUTTON", L"设置CH1",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             cx + bw + bg, cy, bw, bh,
-            hwnd, (HMENU)IDC_BUTTON_LORA_SET_MODE, hInst, NULL);
-        SendMessageW(hBtn, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+            hwnd, (HMENU)IDC_BUTTON_LORA_SET_CH1, hInst, NULL);
+        SendMessageW(pData->hBtnSetCh1, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
-        hBtn = CreateWindowExW(0, L"BUTTON", L"设置CH1",
+        pData->hBtnSetCh2 = CreateWindowExW(0, L"BUTTON", L"设置CH2",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             cx + 2 * (bw + bg), cy, bw, bh,
-            hwnd, (HMENU)IDC_BUTTON_LORA_SET_CH1, hInst, NULL);
-        SendMessageW(hBtn, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+            hwnd, (HMENU)IDC_BUTTON_LORA_SET_CH2, hInst, NULL);
+        SendMessageW(pData->hBtnSetCh2, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
-        hBtn = CreateWindowExW(0, L"BUTTON", L"设置CH2",
+        pData->hBtnSetPnum = CreateWindowExW(0, L"BUTTON", L"设置PNUM",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             cx + 3 * (bw + bg), cy, bw, bh,
-            hwnd, (HMENU)IDC_BUTTON_LORA_SET_CH2, hInst, NULL);
-        SendMessageW(hBtn, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
-
-        hBtn = CreateWindowExW(0, L"BUTTON", L"设置PNUM",
-            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            cx + 4 * (bw + bg), cy, bw, bh,
             hwnd, (HMENU)IDC_BUTTON_LORA_SET_PNUM, hInst, NULL);
-        SendMessageW(hBtn, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+        SendMessageW(pData->hBtnSetPnum, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         cy += bh + 6;
 
-        /* Row 7: NID/GWID buttons */
-        hBtn = CreateWindowExW(0, L"BUTTON", L"查询 NID",
+        /* Row 8: NID query + GWID query/set */
+        pData->hBtnQueryNid = CreateWindowExW(0, L"BUTTON", L"查询 NID",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             cx, cy, bw, bh,
             hwnd, (HMENU)IDC_BUTTON_LORA_QUERY_NID, hInst, NULL);
-        SendMessageW(hBtn, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+        SendMessageW(pData->hBtnQueryNid, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
-        hBtn = CreateWindowExW(0, L"BUTTON", L"设置 NID",
+        pData->hBtnQueryGwid = CreateWindowExW(0, L"BUTTON", L"查询 GWID",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             cx + bw + bg, cy, bw, bh,
-            hwnd, (HMENU)IDC_BUTTON_LORA_SET_NID, hInst, NULL);
-        SendMessageW(hBtn, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+            hwnd, (HMENU)IDC_BUTTON_LORA_QUERY_GWID, hInst, NULL);
+        SendMessageW(pData->hBtnQueryGwid, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
-        hBtn = CreateWindowExW(0, L"BUTTON", L"查询 GWID",
+        pData->hBtnSetGwid = CreateWindowExW(0, L"BUTTON", L"设置 GWID",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             cx + 2 * (bw + bg), cy, bw, bh,
-            hwnd, (HMENU)IDC_BUTTON_LORA_QUERY_GWID, hInst, NULL);
-        SendMessageW(hBtn, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
-
-        hBtn = CreateWindowExW(0, L"BUTTON", L"设置 GWID",
-            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            cx + 3 * (bw + bg), cy, bw, bh,
             hwnd, (HMENU)IDC_BUTTON_LORA_SET_GWID, hInst, NULL);
-        SendMessageW(hBtn, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+        SendMessageW(pData->hBtnSetGwid, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         cy += bh + 6;
 
         /* Status label */
         pData->hLabelLoraStatus = CreateWindowExW(0, L"STATIC",
-            L"就绪",
+            L"请先上电 LoRa",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
             cx, cy + 2, grp2W - 28, 22,
             hwnd, (HMENU)IDC_LABEL_LORA_STATUS, hInst, NULL);
@@ -651,10 +840,10 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         /* ========== Group 3: Bus Monitor (full width, bottom) ========== */
         int grp3X = margin;
         int grp3Y = grp1Y + grp1H + 10;
-        int grp3W = WINDOW_WIDTH - 2 * margin;
-        int grp3H = WINDOW_HEIGHT - TAB_HEIGHT - STATUSBAR_HEIGHT - margin - grp3Y;
+        int grp3W = pageW - 2 * margin;
+        int grp3H = pageH - TAB_HEIGHT - STATUSBAR_HEIGHT - margin - grp3Y;
         if (grp3H < 100) grp3H = 100;
-        CreateWindowExW(0, L"BUTTON",
+        pData->hGrpMonitor = CreateWindowExW(0, L"BUTTON",
             L"总线监视",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             grp3X, grp3Y, grp3W, grp3H, hwnd, NULL, hInst, NULL);
@@ -739,8 +928,19 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
             return 0;
         }
 
+        /* LoRa power toggle */
+        case IDC_BUTTON_LORA_POWER:
+            SendLoraCommand(pData, LORA_CMD_SET_POWER);
+            return 0;
+
+        /* LoRa test mode toggle */
+        case IDC_BUTTON_LORA_TEST:
+            SendLoraCommand(pData, LORA_CMD_SET_TEST);
+            return 0;
+
         /* Query all LoRa config */
         case IDC_BUTTON_LORA_QUERY_CFG:
+            pData->pendingQueryCount = 6;
             SendLoraCommand(pData, LORA_CMD_QUERY_MODE);
             SendLoraCommand(pData, LORA_CMD_QUERY_CH1);
             SendLoraCommand(pData, LORA_CMD_QUERY_CH2);
@@ -769,17 +969,23 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
             SendLoraCommand(pData, LORA_CMD_QUERY_NID);
             return 0;
 
-        case IDC_BUTTON_LORA_SET_NID:
-            SendLoraCommand(pData, LORA_CMD_SET_NID);
-            return 0;
-
         case IDC_BUTTON_LORA_QUERY_GWID:
             SendLoraCommand(pData, LORA_CMD_QUERY_GWID);
             return 0;
 
-        case IDC_BUTTON_LORA_SET_GWID:
-            SendLoraCommand(pData, LORA_CMD_SET_GWID);
+        case IDC_BUTTON_LORA_SET_GWID: {
+            wchar_t gwidStr[32] = L"";
+            GetWindowTextW(pData->hEditGwid, gwidStr, 32);
+            if (ShowGwidInputDialog(hwnd, gwidStr, 32)) {
+                uint32_t gwid = (uint32_t)wcstoul(gwidStr, NULL, 16);
+                uint8_t tx[8] = {0};
+                tx[0] = LORA_CMD_SET_GWID;
+                PutBE32(gwid, &tx[4]);
+                SetWindowTextW(pData->hLabelLoraStatus, L"等待响应...");
+                CanCommand_SendFrame(pData->canCmd, CANID_LORA_RX, tx, 8, 0, 0);
+            }
             return 0;
+        }
 
         default:
             break;
@@ -792,110 +998,163 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         if (fi) {
             AppendMonitorLine(pData, fi->is_tx, fi->id, fi->data, fi->dlc);
 
-            /* Parse LoRa response (0x106) */
-            if (!fi->is_tx && fi->id == CANID_LORA_TX && fi->dlc > 0) {
-                uint8_t cmd;
-                if (!LoraCmdQueue_Pop(pData, &cmd)) { free(fi); return 0; }
+            /* Parse LoRa response (0x106) — data[0] = command code */
+            if (!fi->is_tx && fi->id == CANID_LORA_TX && fi->dlc >= 1) {
+                uint8_t respCmd = fi->data[0];
+                wchar_t status[128] = L"";
 
-                wchar_t status[128];
-                int ok = (fi->data[0] == 0x00);
+                switch (respCmd) {
+                case LORA_CMD_SET_POWER:
+                    if (fi->dlc >= 2) {
+                        pData->loraPowered = (fi->data[1] != 0) ? 1 : 0;
+                        wsprintfW(status, L"LoRa %s",
+                                  pData->loraPowered ? L"已上电" : L"已断电");
+                    }
+                    UpdateLoraControlStates(pData);
+                    break;
 
-                switch (cmd) {
+                case LORA_CMD_SET_TEST:
+                    if (fi->dlc >= 2) {
+                        pData->loraTestMode = (fi->data[1] != 0) ? 1 : 0;
+                        wsprintfW(status, L"测试模式 %s",
+                                  pData->loraTestMode ? L"已开启" : L"已关闭");
+                    }
+                    UpdateLoraControlStates(pData);
+                    break;
+
                 case LORA_CMD_QUERY_MODE:
                 case LORA_CMD_SET_MODE:
-                    if (ok && fi->dlc > 1) {
+                    if (fi->dlc > 1) {
                         int prot = fi->data[1] >> 4;
                         int mode = fi->data[1] & 0x0F;
-                        wsprintfW(status,
-                            L"模式: prot=%d mode=%d", prot, mode);
+                        wsprintfW(status, L"模式: prot=%d mode=%d", prot, mode);
                         SendMessageW(pData->hComboProt, CB_SETCURSEL, prot, 0);
                         SendMessageW(pData->hComboMode, CB_SETCURSEL, mode, 0);
-                    } else if (!ok) {
-                        wcscpy(status, L"模式操作失败");
                     }
                     break;
+
                 case LORA_CMD_QUERY_CH1:
                 case LORA_CMD_SET_CH1:
-                    if (ok && fi->dlc >= 4) {
+                    if (fi->dlc >= 4) {
                         int spd = fi->data[1];
                         uint16_t ch = GetBE16(&fi->data[2]);
-                        wsprintfW(status,
-                            L"CH1: spd=%d ch=%d", spd, ch);
+                        wsprintfW(status, L"CH1: spd=%d ch=%d", spd, ch);
                         if (spd >= 4 && spd <= 11)
                             SendMessageW(pData->hComboSpd1, CB_SETCURSEL, spd - 4, 0);
                         wchar_t chbuf[16];
                         wsprintfW(chbuf, L"%d", ch);
                         SetWindowTextW(pData->hEditCh1, chbuf);
-                    } else if (!ok) {
-                        wcscpy(status, L"CH1 操作失败");
                     }
                     break;
+
                 case LORA_CMD_QUERY_CH2:
                 case LORA_CMD_SET_CH2:
-                    if (ok && fi->dlc >= 4) {
+                    if (fi->dlc >= 4) {
                         int spd = fi->data[1];
                         uint16_t ch = GetBE16(&fi->data[2]);
-                        wsprintfW(status,
-                            L"CH2: spd=%d ch=%d", spd, ch);
+                        wsprintfW(status, L"CH2: spd=%d ch=%d", spd, ch);
                         if (spd >= 4 && spd <= 11)
                             SendMessageW(pData->hComboSpd2, CB_SETCURSEL, spd - 4, 0);
                         wchar_t chbuf[16];
                         wsprintfW(chbuf, L"%d", ch);
                         SetWindowTextW(pData->hEditCh2, chbuf);
-                    } else if (!ok) {
-                        wcscpy(status, L"CH2 操作失败");
                     }
                     break;
+
                 case LORA_CMD_QUERY_PNUM:
                 case LORA_CMD_SET_PNUM:
-                    if (ok && fi->dlc >= 2) {
+                    if (fi->dlc >= 2) {
                         int pnum = fi->data[1];
                         wsprintfW(status, L"PNUM: %d", pnum);
                         if (pnum >= 0 && pnum <= 2)
                             SendMessageW(pData->hComboPnum, CB_SETCURSEL, pnum, 0);
-                    } else if (!ok) {
-                        wcscpy(status, L"PNUM 操作失败");
                     }
                     break;
+
                 case LORA_CMD_QUERY_NID:
                 case LORA_CMD_SET_NID:
-                    if (ok && fi->dlc >= 8) {
+                    if (fi->dlc >= 8) {
                         uint32_t nid = GetBE32(&fi->data[4]);
                         wsprintfW(status, L"NID: 0x%08X", nid);
                         wchar_t nbuf[16];
                         wsprintfW(nbuf, L"%08X", nid);
                         SetWindowTextW(pData->hEditNid, nbuf);
-                    } else if (!ok) {
-                        wcscpy(status, L"NID 操作失败");
                     }
                     break;
+
                 case LORA_CMD_QUERY_GWID:
                 case LORA_CMD_SET_GWID:
-                    if (ok && fi->dlc >= 8) {
+                    if (fi->dlc >= 8) {
                         uint32_t gwid = GetBE32(&fi->data[4]);
                         wsprintfW(status, L"GWID: 0x%08X", gwid);
                         wchar_t gbuf[16];
                         wsprintfW(gbuf, L"%08X", gwid);
                         SetWindowTextW(pData->hEditGwid, gbuf);
-                    } else if (!ok) {
-                        wcscpy(status, L"GWID 操作失败");
                     }
                     break;
+
                 default:
-                    if (ok)
-                        wcscpy(status, L"成功");
-                    else
-                        wcscpy(status, L"失败");
+                    wsprintfW(status, L"未知响应: 0x%02X", respCmd);
                     break;
                 }
-                /* If queue is empty, all queries done */
-                if (pData->loraCmdQueueHead == pData->loraCmdQueueTail)
-                    wcscat(status, L" [查询完成]");
-                SetWindowTextW(pData->hLabelLoraStatus, status);
+
+                /* Track batch query completion */
+                if (pData->pendingQueryCount > 0) {
+                    pData->pendingQueryCount--;
+                    if (pData->pendingQueryCount == 0) {
+                        wcscat(status, L" [查询完成]");
+                    }
+                }
+
+                if (status[0])
+                    SetWindowTextW(pData->hLabelLoraStatus, status);
             }
 
             free(fi);
         }
+        return 0;
+    }
+
+    /* ---- Resize: adapt group boxes and monitor area ---- */
+    case WM_SIZE: {
+        int cx = LOWORD(lParam);
+        int cy = HIWORD(lParam);
+        if (cx < 100 || cy < 100) return 0;
+
+        int margin = 14;
+        int grp1W = 480, grp1H = 300;
+
+        /* Group 2: LoRa Config — stretch width */
+        int grp2X = margin + grp1W + 10;
+        int grp2W = cx - margin - grp2X - margin;
+        if (grp2W < 200) grp2W = 200;
+        MoveWindow(pData->hGrpLora, grp2X, margin, grp2W, grp1H, TRUE);
+
+        /* Group 3: Bus Monitor — stretch both */
+        int grp3X = margin;
+        int grp3Y = margin + grp1H + 10;
+        int grp3W = cx - 2 * margin;
+        int grp3H = cy - grp3Y;
+        if (grp3H < 100) grp3H = 100;
+        if (grp3W < 200) grp3W = 200;
+        MoveWindow(pData->hGrpMonitor, grp3X, grp3Y, grp3W, grp3H, TRUE);
+
+        /* Monitor edit — fill group interior */
+        int monX = grp3X + 10;
+        int monY = grp3Y + 24;
+        int monW = grp3W - 20;
+        int monH = grp3H - 68;
+        if (monW < 50) monW = 50;
+        if (monH < 50) monH = 50;
+        MoveWindow(pData->hEditMonitor, monX, monY, monW, monH, TRUE);
+
+        /* Bottom toolbar — reposition with group */
+        int tbY = grp3Y + grp3H - 34;
+        MoveWindow(pData->hBtnClearMonitor,
+                   grp3X + grp3W - 100, tbY, 80, 28, TRUE);
+        MoveWindow(pData->hCheckAutoScroll,
+                   grp3X + 10, tbY, 110, 24, TRUE);
+
         return 0;
     }
 

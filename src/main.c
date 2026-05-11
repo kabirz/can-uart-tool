@@ -198,6 +198,14 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
         OnSize(hWnd);
         return 0;
 
+    case WM_GETMINMAXINFO: {
+        /* Set minimum window size so controls remain usable */
+        MINMAXINFO *mmi = (MINMAXINFO *)lParam;
+        mmi->ptMinTrackSize.x = 900;
+        mmi->ptMinTrackSize.y = 650;
+        return 0;
+    }
+
     case WM_NOTIFY: {
         NMHDR *pnm = (NMHDR *)lParam;
         if (pnm->idFrom == IDC_TAB_CONTROL) {
@@ -487,19 +495,29 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     wc.hIconSm       = wc.hIcon;
     RegisterClassExW(&wc);
 
-    /* Calculate window size for desired client area of 800x560 */
-    DWORD dwStyle   = WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX;
+    /* Calculate window size — auto-fit to screen, resizable */
+    DWORD dwStyle   = WS_OVERLAPPEDWINDOW;
     DWORD dwExStyle = 0;
-    RECT  rcWin;
-    CalcWindowRectFromClient(dwStyle, dwExStyle, WINDOW_WIDTH, WINDOW_HEIGHT, &rcWin);
 
-    /* Create main window centered on screen */
+    /* Work area excludes taskbar */
+    RECT rcWork;
+    SystemParametersInfoW(SPI_GETWORKAREA, 0, &rcWork, 0);
+    int workW = rcWork.right - rcWork.left;
+    int workH = rcWork.bottom - rcWork.top;
+
+    /* Calculate ideal window rect from desired client area */
+    RECT rcWin;
+    CalcWindowRectFromClient(dwStyle, dwExStyle, WINDOW_WIDTH, WINDOW_HEIGHT, &rcWin);
     int winW = rcWin.right - rcWin.left;
     int winH = rcWin.bottom - rcWin.top;
-    int screenW = GetSystemMetrics(SM_CXSCREEN);
-    int screenH = GetSystemMetrics(SM_CYSCREEN);
-    int posX = (screenW - winW) / 2;
-    int posY = (screenH - winH) / 2;
+
+    /* Clamp window to work area with margin */
+    if (winW > workW - 20) winW = workW - 20;
+    if (winH > workH - 10) winH = workH - 10;
+
+    /* Center within work area */
+    int posX = rcWork.left + (workW - winW) / 2;
+    int posY = rcWork.top  + (workH - winH) / 2;
 
     hWnd = CreateWindowExW(
         dwExStyle,

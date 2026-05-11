@@ -71,6 +71,8 @@
 #define IDC_BUTTON_LORA_QUERY_GWID      1236
 #define IDC_BUTTON_LORA_SET_GWID        1237
 #define IDC_LABEL_LORA_STATUS           1238
+#define IDC_BUTTON_LORA_POWER           1239
+#define IDC_BUTTON_LORA_TEST            1240
 
 // Tab3: UART Shell 终端 (1300-1399)
 #define IDC_COMBO_UART_PORT             1301

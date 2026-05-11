@@ -79,6 +79,10 @@ typedef struct {
     HWND hEditLog;
     HWND hBtnClearLog;
 
+    /* Resizable group boxes */
+    HWND hGrpBoardCmd;   /* Group 3: Board Commands (right column, stretches width) */
+    HWND hGrpLog;        /* Group 4: Log Area (stretches both) */
+
     /* Fonts */
     HFONT hFont;
     HFONT hFontBold;
@@ -292,6 +296,12 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
         CREATESTRUCTW *cs = (CREATESTRUCTW *)lParam;
         HINSTANCE hInst = cs->hInstance;
 
+        /* Get actual client area instead of hardcoded constants */
+        RECT rcClient;
+        GetClientRect(hwnd, &rcClient);
+        int pageW = rcClient.right  > 0 ? rcClient.right  : WINDOW_WIDTH;
+        int pageH = rcClient.bottom > 0 ? rcClient.bottom : WINDOW_HEIGHT;
+
         /* Recover the manager pointers passed via lpCreateParams */
         TabCanUpgrade_InitParams *init = (TabCanUpgrade_InitParams *)cs->lpCreateParams;
         pData->canMgr    = init->canMgr;
@@ -449,9 +459,9 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
 
         /* ========== Group 3: Board Commands (right column) ========== */
         int grp3X = grp1X + grp1W + 8, grp3Y = margin;
-        int grp3W = WINDOW_WIDTH - margin - grp3X;
+        int grp3W = pageW - margin - grp3X;
         int grp3H = grp1H;
-        CreateWindowExW(0, L"BUTTON", L"板卡命令",
+        pData->hGrpBoardCmd = CreateWindowExW(0, L"BUTTON", L"板卡命令",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             grp3X, grp3Y, grp3W, grp3H, hwnd, NULL, hInst, NULL);
 
@@ -473,10 +483,10 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
         /* ========== Group 4: Log Area (full width bottom section) ========== */
         int logGrpX = margin;
         int logGrpY = grp2Y + grp2H + 8;
-        int logGrpW = WINDOW_WIDTH - 2 * margin;
-        int logGrpH = WINDOW_HEIGHT - TAB_HEIGHT - STATUSBAR_HEIGHT - margin - logGrpY;
+        int logGrpW = pageW - 2 * margin;
+        int logGrpH = pageH - TAB_HEIGHT - STATUSBAR_HEIGHT - margin - logGrpY;
         if (logGrpH < 100) logGrpH = 100;
-        CreateWindowExW(0, L"BUTTON", L"日志",
+        pData->hGrpLog = CreateWindowExW(0, L"BUTTON", L"日志",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             logGrpX, logGrpY, logGrpW, logGrpH, hwnd, NULL, hInst, NULL);
 
@@ -795,6 +805,48 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
         g_hwndForLog = hwnd;
         GetDeviceList(pData);
         return 0;
+
+    /* ---- Resize: adapt group boxes and log area ---- */
+    case WM_SIZE: {
+        int cx = LOWORD(lParam);
+        int cy = HIWORD(lParam);
+        if (cx < 100 || cy < 100) return 0;
+
+        int margin = MARGIN;
+        int grp1W = 630, grp1H = 236;
+        int grp2H = 200;
+        int grp2Y = margin + grp1H + 8;
+
+        /* Group 3: Board Commands — stretch width */
+        int grp3X = margin + grp1W + 8;
+        int grp3W = cx - margin - grp3X;
+        if (grp3W < 200) grp3W = 200;
+        MoveWindow(pData->hGrpBoardCmd, grp3X, margin, grp3W, grp1H, TRUE);
+
+        /* Group 4: Log Area — stretch both */
+        int logGrpX = margin;
+        int logGrpY = grp2Y + grp2H + 8;
+        int logGrpW = cx - 2 * margin;
+        int logGrpH = cy - logGrpY;
+        if (logGrpH < 100) logGrpH = 100;
+        if (logGrpW < 200) logGrpW = 200;
+        MoveWindow(pData->hGrpLog, logGrpX, logGrpY, logGrpW, logGrpH, TRUE);
+
+        /* Log edit — fill group interior */
+        int logEditX = logGrpX + 8;
+        int logEditY = logGrpY + LINE_H - 2;
+        int logEditW = logGrpW - BTN_W - 30;
+        int logEditH = logGrpH - LINE_H - 8;
+        if (logEditW < 50) logEditW = 50;
+        if (logEditH < 50) logEditH = 50;
+        MoveWindow(pData->hEditLog, logEditX, logEditY, logEditW, logEditH, TRUE);
+
+        /* Clear log button — right side of log area */
+        MoveWindow(pData->hBtnClearLog,
+                   logGrpX + logGrpW - BTN_W - 10, logEditY, BTN_W, CTRL_H, TRUE);
+
+        return 0;
+    }
 
     /* ---- Cleanup ---- */
     case WM_DESTROY:
