@@ -32,6 +32,13 @@ typedef struct {
     uint8_t data[1]; /* variable length */
 } LoraHexDumpMsg;
 
+/* WM_LORA_SEND_FRAME (lParam = heap-allocated, receiver frees) */
+typedef struct {
+    uint32_t nid;
+    uint16_t len;
+    uint8_t  data[1]; /* variable length */
+} LoraSendMsg;
+
 /* WM_LORA_NET_PARAMS (lParam = heap-allocated, receiver frees) */
 typedef struct {
     char ip[64];
@@ -586,7 +593,8 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
                 wsprintfW(dataStr, L"X=%d Y=%d Btn=%s",
                           x, y, btn ? L"Released" : L"Pressed");
 
-                /* 收到遥测后回发模拟扫描仪合并帧 (同 tools) */
+                /* 收到遥测后回发模拟扫描仪合并帧 — 通过 PostMessage 延迟执行，
+                   避免在 UI 线程中同步调用 SDK send (SDK recv 线程同时活跃) */
                 if (pData->sdk) {
                     lora_scanner_data_t scan = {
                         .overbreak_valid = 1,
@@ -599,12 +607,14 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
                         .coord_y   = (int32_t)(rand() % 10000 - 5000),
                         .coord_z   = (int32_t)(rand() % 5000),
                     };
-                    uint8_t scan_buf[LORA_SCANNER_FRAME_SIZE];
-                    lora_scanner_pack(scan_buf, sizeof(scan_buf), &scan);
-                    lora_sdk_send_frame(pData->sdk, msg->nid,
-                                        scan_buf, sizeof(scan_buf));
-                    pData->txCount++;
-                    UpdateCounters(pData);
+                    LoraSendMsg *smsg = (LoraSendMsg *)malloc(
+                        offsetof(LoraSendMsg, data) + LORA_SCANNER_FRAME_SIZE);
+                    if (smsg) {
+                        smsg->nid = msg->nid;
+                        smsg->len = LORA_SCANNER_FRAME_SIZE;
+                        lora_scanner_pack(smsg->data, LORA_SCANNER_FRAME_SIZE, &scan);
+                        PostMessageW(hwnd, WM_LORA_SEND_FRAME, 0, (LPARAM)smsg);
+                    }
                 }
             }
             break;
@@ -613,12 +623,16 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         case 0x02: { /* TEST: echo frame back */
             typeStr = L"测试";
 
-            /* Echo back */
+            /* Echo back — deferred via PostMessage */
             if (pData->sdk) {
-                lora_sdk_send_frame(pData->sdk, msg->nid,
-                                    msg->data, msg->len);
-                pData->txCount++;
-                UpdateCounters(pData);
+                LoraSendMsg *smsg = (LoraSendMsg *)malloc(
+                    offsetof(LoraSendMsg, data) + msg->len);
+                if (smsg) {
+                    smsg->nid = msg->nid;
+                    smsg->len = msg->len;
+                    memcpy(smsg->data, msg->data, msg->len);
+                    PostMessageW(hwnd, WM_LORA_SEND_FRAME, 0, (LPARAM)smsg);
+                }
             }
 
             /* body = data[1..], body_len = len-1 */
@@ -700,6 +714,20 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         return 0;
     }
 
+    /* ---- Deferred frame send (posted by WM_LORA_FRAME handler) ---- */
+    case WM_LORA_SEND_FRAME: {
+        LoraSendMsg *smsg = (LoraSendMsg *)lParam;
+        if (!smsg) return 0;
+        if (pData && pData->sdk) {
+            lora_sdk_send_frame(pData->sdk, smsg->nid,
+                                smsg->data, smsg->len);
+            pData->txCount++;
+            UpdateCounters(pData);
+        }
+        free(smsg);
+        return 0;
+    }
+
     /* ---- Log message (from SDK via PostMessage) ---- */
     case WM_LORA_LOG: {
         char *text = (char *)lParam;
@@ -714,9 +742,14 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
             wchar_t *wtext = (wchar_t *)malloc(wlen * sizeof(wchar_t));
             if (wtext) {
                 MultiByteToWideChar(CP_UTF8, 0, text, -1, wtext, wlen);
-                wchar_t line[1024];
-                wsprintfW(line, L"[%s] %s\r\n", timeStr, wtext);
-                AppendLogText(pData, line);
+                int lineCap = 16 + wlen + 4;
+                wchar_t *line = (wchar_t *)malloc(lineCap * sizeof(wchar_t));
+                if (line) {
+                    _snwprintf(line, lineCap, L"[%s] %s\r\n", timeStr, wtext);
+                    line[lineCap - 1] = L'\0';
+                    AppendLogText(pData, line);
+                    free(line);
+                }
                 free(wtext);
             }
         }
@@ -742,16 +775,25 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
                 MultiByteToWideChar(CP_UTF8, 0, msg->prefix, -1, wprefix, pwlen);
         }
 
-        /* Format hex data */
-        wchar_t hexBuf[1024];
-        int pos = 0;
-        for (int i = 0; i < msg->len && pos < 900; i++)
-            pos += wsprintfW(hexBuf + pos, L"%02X ", msg->data[i]);
+        /* Format hex data with dynamic buffer */
+        int hexCap = msg->len * 3 + 4;
+        wchar_t *hexBuf = (wchar_t *)malloc(hexCap * sizeof(wchar_t));
+        if (hexBuf) {
+            int pos = 0;
+            for (int i = 0; i < msg->len && pos < hexCap - 4; i++)
+                pos += _snwprintf(hexBuf + pos, hexCap - pos, L"%02X ", msg->data[i]);
 
-        wchar_t line[1200];
-        wsprintfW(line, L"[%s] %s: %s\r\n", timeStr,
-                  wprefix ? wprefix : L"", hexBuf);
-        AppendLogText(pData, line);
+            int lineCap = 16 + (wprefix ? pwlen : 1) + pos + 8;
+            wchar_t *line = (wchar_t *)malloc(lineCap * sizeof(wchar_t));
+            if (line) {
+                _snwprintf(line, lineCap, L"[%s] %s: %s\r\n", timeStr,
+                           wprefix ? wprefix : L"", hexBuf);
+                line[lineCap - 1] = L'\0';
+                AppendLogText(pData, line);
+                free(line);
+            }
+            free(hexBuf);
+        }
 
         if (wprefix) free(wprefix);
         free(msg);

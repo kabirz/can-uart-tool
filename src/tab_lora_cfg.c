@@ -197,22 +197,27 @@ static void AppendLog(TAB_LORA_CFG *pData, const char *text)
     SYSTEMTIME st;
     GetLocalTime(&st);
 
-    char ts[32];
-    snprintf(ts, sizeof(ts), "[%02d:%02d:%02d] ",
-             st.wHour, st.wMinute, st.wSecond);
+    wchar_t ts[32];
+    _snwprintf(ts, 32, L"[%02d:%02d:%02d] ", st.wHour, st.wMinute, st.wSecond);
 
-    int tsLen = (int)strlen(ts);
-    int textLen = (int)strlen(text);
+    /* Convert UTF-8 text to wide string */
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, text, -1, NULL, 0);
+    if (wlen <= 0) return;
+    wchar_t *wtext = (wchar_t *)malloc(wlen * sizeof(wchar_t));
+    if (!wtext) return;
+    MultiByteToWideChar(CP_UTF8, 0, text, -1, wtext, wlen);
 
-    int totalLen = GetWindowTextLengthA(pData->hLogEdit);
-    SendMessageA(pData->hLogEdit, EM_SETSEL, totalLen, totalLen);
-    SendMessageA(pData->hLogEdit, EM_REPLACESEL, FALSE, (LPARAM)ts);
-    SendMessageA(pData->hLogEdit, EM_REPLACESEL, FALSE, (LPARAM)text);
+    int totalLen = GetWindowTextLengthW(pData->hLogEdit);
+    SendMessageW(pData->hLogEdit, EM_SETSEL, totalLen, totalLen);
+    SendMessageW(pData->hLogEdit, EM_REPLACESEL, FALSE, (LPARAM)ts);
+    SendMessageW(pData->hLogEdit, EM_REPLACESEL, FALSE, (LPARAM)wtext);
     /* Add newline if not already present */
-    if (textLen > 0 && text[textLen - 1] != '\n') {
-        SendMessageA(pData->hLogEdit, EM_REPLACESEL, FALSE, (LPARAM)"\r\n");
+    int textLen = (int)wcslen(wtext);
+    if (textLen == 0 || (wtext[textLen - 1] != L'\n' && wtext[textLen - 1] != L'\r')) {
+        SendMessageW(pData->hLogEdit, EM_REPLACESEL, FALSE, (LPARAM)L"\r\n");
     }
-    SendMessageA(pData->hLogEdit, EM_SCROLLCARET, 0, 0);
+    SendMessageW(pData->hLogEdit, EM_SCROLLCARET, 0, 0);
+    free(wtext);
 }
 
 /* Parse AT response and update corresponding controls — matches tools' lora_udp.c */
@@ -995,7 +1000,7 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
 
         /* ---- Group 5: Log ---- */
         case IDC_CFG_CLEAR_BTN:
-            SetWindowTextA(pData->hLogEdit, "");
+            SetWindowTextW(pData->hLogEdit, L"");
             return 0;
 
         default:

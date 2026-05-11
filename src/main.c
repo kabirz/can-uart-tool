@@ -160,14 +160,16 @@ static void cb_on_log(void *ud, const char *message)
 {
     LoraTabPair *tabs = (LoraTabPair *)ud;
     if (!message) return;
-    char *copy = _strdup(message);
-    if (!copy) return;
-    if (tabs->hDataTab)
-        PostMessageW(tabs->hDataTab, WM_LORA_LOG, 0, (LPARAM)copy);
-    /* Also forward to cfg tab with separate copy */
-    char *copy2 = _strdup(message);
-    if (copy2 && tabs->hCfgTab)
-        PostMessageW(tabs->hCfgTab, WM_LORA_LOG, 0, (LPARAM)copy2);
+    if (tabs->hDataTab) {
+        char *copy = _strdup(message);
+        if (copy)
+            PostMessageW(tabs->hDataTab, WM_LORA_LOG, 0, (LPARAM)copy);
+    }
+    if (tabs->hCfgTab) {
+        char *copy2 = _strdup(message);
+        if (copy2)
+            PostMessageW(tabs->hCfgTab, WM_LORA_LOG, 0, (LPARAM)copy2);
+    }
 }
 
 static void cb_on_hex_dump(void *ud, const char *prefix,

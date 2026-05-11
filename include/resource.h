@@ -169,6 +169,7 @@
 #define WM_LORA_NET_PARAMS              (WM_APP + 14)
 #define WM_LORA_LOG                     (WM_APP + 15)
 #define WM_LORA_HEX_DUMP                (WM_APP + 16)
+#define WM_LORA_SEND_FRAME              (WM_APP + 17)
 
 // Layout constants
 #define WINDOW_WIDTH                    1200
