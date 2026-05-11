@@ -469,7 +469,6 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         pData->hGrpDev = CreateWindowExW(0, L"BUTTON", L"设备发现",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             margin, grp1Y, grp1W, grp1H, hwnd, NULL, hInst, NULL);
-        SendMessageW(pData->hGrpDev, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         cx = margin + 14;
         cy = grp1Y + 26;
@@ -518,7 +517,6 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         pData->hGrpNet = CreateWindowExW(0, L"BUTTON", L"网络设置",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             margin, grp2Y, grp2W, grp2H, hwnd, NULL, hInst, NULL);
-        SendMessageW(pData->hGrpNet, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         cx = margin + 14;
         cy = grp2Y + 26;
@@ -600,7 +598,6 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         pData->hGrpProto = CreateWindowExW(0, L"BUTTON", L"LoRa 协议",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             margin, grp3Y, grp3W, grp3H, hwnd, NULL, hInst, NULL);
-        SendMessageW(pData->hGrpProto, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         cx = margin + 14;
         cy = grp3Y + 26;
@@ -744,7 +741,6 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         pData->hGrpAt = CreateWindowExW(0, L"BUTTON", L"AT 命令",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             margin, grp4Y, grp4W, grp4H, hwnd, NULL, hInst, NULL);
-        SendMessageW(pData->hGrpAt, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         cx = margin + 14;
         cy = grp4Y + 26;
@@ -764,7 +760,6 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         pData->hGrpLog = CreateWindowExW(0, L"BUTTON", L"响应日志",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             margin, grp5Y, grp5W, grp5H, hwnd, NULL, hInst, NULL);
-        SendMessageW(pData->hGrpLog, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         int logX = margin + 10;
         int logY = grp5Y + 24;

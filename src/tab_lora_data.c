@@ -274,7 +274,6 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         pData->hGrpConn = CreateWindowExW(0, L"BUTTON", L"连接",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             grp1X, grp1Y, grp1W, grp1H, hwnd, NULL, hInst, NULL);
-        SendMessageW(pData->hGrpConn, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         cx = grp1X + 14;
         cy = grp1Y + 26;
@@ -342,7 +341,6 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         pData->hGrpTelemetry = CreateWindowExW(0, L"BUTTON", L"手柄数据",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             margin, grp2Y, teleW, grp2H, hwnd, NULL, hInst, NULL);
-        SendMessageW(pData->hGrpTelemetry, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         cx = margin + 14;
         cy = grp2Y + 28;
@@ -400,7 +398,6 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         pData->hGrpLog = CreateWindowExW(0, L"BUTTON", L"原始日志",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             logX, grp2Y, logW, grp2H, hwnd, NULL, hInst, NULL);
-        SendMessageW(pData->hGrpLog, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         int logEditX = logX + 10;
         int logEditY = grp2Y + 24;
@@ -422,7 +419,6 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         pData->hGrpOps = CreateWindowExW(0, L"BUTTON", L"操作",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             margin, grp3Y, grp3W, grp3H, hwnd, NULL, hInst, NULL);
-        SendMessageW(pData->hGrpOps, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         cx = margin + 14;
         cy = grp3Y + 18;
@@ -462,7 +458,6 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         pData->hGrpHistory = CreateWindowExW(0, L"BUTTON", L"历史记录",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             margin, grp4Y, grp4W, grp4H, hwnd, NULL, hInst, NULL);
-        SendMessageW(pData->hGrpHistory, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         int listX = margin + 10;
         int listY = grp4Y + 24;
