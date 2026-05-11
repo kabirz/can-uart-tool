@@ -64,3 +64,13 @@ if(MINGW)
 elseif(MSVC)
     target_compile_options(lora_sdk_shared PRIVATE /W3 /utf-8)
 endif()
+
+# --- Example program (links against shared DLL) ---
+add_executable(lora_sdk_example lora_sdk_example.c)
+target_link_libraries(lora_sdk_example PRIVATE lora_sdk_shared)
+target_compile_definitions(lora_sdk_example PRIVATE _CRT_SECURE_NO_WARNINGS)
+if(MINGW)
+    target_link_options(lora_sdk_example PRIVATE -static-libgcc -s)
+elseif(MSVC)
+    target_compile_options(lora_sdk_example PRIVATE /utf-8)
+endif()

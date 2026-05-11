@@ -86,79 +86,147 @@ target_link_libraries(myapp PRIVATE lora_gateway_sdk.lib ws2_32 iphlpapi)
 
 ### 最小示例
 
+完整源码见 `lora_sdk_example.c`，以下为核心代码说明。
+
+#### 回调实现
+
 ```c
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#define LORA_SDK_STATIC  /* 静态链接时定义 */
 #include "lora_sdk.h"
 
-/* ---- 回调实现 ---- */
+#ifdef _WIN32
+#include <windows.h>
+static HANDLE g_connEvent      = NULL;
+static HANDLE g_searchEvent    = NULL;
+static HANDLE g_netParamsEvent = NULL;
+#endif
 
+static char g_gatewayIp[64] = "";
+static lora_sdk_t *g_sdk = NULL;
+static volatile uint32_t g_pendingRssiNid = 0;
+
+/* 连接状态回调 */
 static void on_conn_state(void *ud, enum lora_sdk_conn_state state)
 {
     const char *names[] = {"DISCONNECTED", "CONNECTING", "CONNECTED"};
     printf("[连接状态] %s\n", names[state]);
+#ifdef _WIN32
+    if (state == LORA_SDK_CONN_CONNECTED)
+        SetEvent(g_connEvent);
+#endif
 }
 
+/* 帧接收回调 — 按类型分区处理 */
 static void on_frame(void *ud, uint32_t nid,
                      const uint8_t *payload, uint16_t len)
 {
-    printf("[收到帧] NID=0x%08X, len=%u, type=0x%02X\n",
-           nid, len, payload[0]);
+    if (!payload || len == 0) return;
+    uint8_t type = payload[0];
+    const uint8_t *body = payload + 1;
+    uint16_t body_len = len - 1;
 
-    /* 解析扫描仪数据 */
-    if (payload[0] == 0x01 && len >= 20) {
-        lora_scanner_data_t scan;
-        if (lora_scanner_parse(payload, len, &scan) == 0) {
-            printf("  超欠挖: %d (有效=%d)\n", scan.overbreak, scan.overbreak_valid);
-            printf("  激光:   %u (有效=%d)\n", scan.laser, scan.laser_valid);
-            printf("  X:      %d (有效=%d)\n", scan.coord_x, scan.coord_xy_valid);
-            printf("  Y:      %d (有效=%d)\n", scan.coord_y, scan.coord_xy_valid);
-            printf("  Z:      %d (有效=%d)\n", scan.coord_z, scan.coord_z_valid);
+    switch (type) {
+    case 0x01: /* 手柄遥测帧 */
+        if (body_len == 8 &&
+            body[5] == 0xFF && body[6] == 0xFF && body[7] == 0xFF) {
+            int16_t x = (int16_t)((uint16_t)body[0] << 8 | body[1]);
+            int16_t y = (int16_t)((uint16_t)body[2] << 8 | body[3]);
+            uint8_t btn = body[4] & 0x01;
+            printf("[手柄] NID=0x%08X  X=%d, Y=%d, 按键=%s\n",
+                   nid, x, y, btn ? "松开" : "按下");
+        } else if (len >= LORA_SCANNER_FRAME_SIZE) {
+            lora_scanner_data_t scan;
+            if (lora_scanner_parse(payload, len, &scan) == 0) {
+                printf("[扫描仪] 超欠挖=%d 激光=%u X=%d Y=%d Z=%d\n",
+                       scan.overbreak, scan.laser,
+                       scan.coord_x, scan.coord_y, scan.coord_z);
+            }
+        }
+        break;
+
+    case 0x02: /* 测试帧 — 回显 */
+        printf("[测试] NID=0x%08X, len=%u\n", nid, len);
+        lora_sdk_send_frame(g_sdk, nid, payload, len); /* echo back */
+        break;
+
+    case 0x03: /* RSSI 请求 — 查询信号强度后回复 */
+        printf("[RSSI] NID=0x%08X\n", nid);
+        g_pendingRssiNid = nid;
+        lora_sdk_send_at(g_sdk, "AT+NINFO?");
+        break;
+    }
+}
+
+/* AT 响应回调 — 解析 NINFO 并发送 RSSI 响应 */
+static void on_at_response(void *ud, const char *resp)
+{
+    printf("[AT响应] %s\n", resp);
+    if (g_pendingRssiNid != 0 && g_sdk) {
+        const char *p = strstr(resp, "+NINFO:");
+        if (p) {
+            int snr_val = 0, rssi_val = -120;
+            int field_idx = 0;
+            const char *cur = p + 7;
+            while (*cur && *cur != '\r' && *cur != '\n' && field_idx < 5) {
+                field_idx++;
+                const char *endp = cur;
+                while (*endp && *endp != ',' && *endp != '\r' && *endp != '\n')
+                    endp++;
+                int flen = (int)(endp - cur);
+                if (field_idx == 4 && flen > 0) snr_val = atoi(cur);
+                if (field_idx == 5 && flen > 0) rssi_val = atoi(cur);
+                if (*endp != ',') break;
+                cur = endp + 1;
+            }
+            uint8_t snr_raw  = (uint8_t)(int8_t)snr_val;
+            uint8_t rssi_raw = (uint8_t)(int8_t)rssi_val;
+            lora_sdk_send_rssi_response(g_sdk, g_pendingRssiNid,
+                                        snr_raw, rssi_raw, 0);
+            g_pendingRssiNid = 0;
         }
     }
+}
+
+/* 网络参数回调 — 自动保存网关 IP 用于 TCP 连接 */
+static void on_net_params(void *ud, const char *ip,
+                          const char *mask, const char *gw)
+{
+    printf("[网络参数] IP=%s, 掩码=%s, 网关=%s\n", ip, mask, gw);
+    if (gw && gw[0])
+        strncpy(g_gatewayIp, gw, sizeof(g_gatewayIp) - 1);
+#ifdef _WIN32
+    SetEvent(g_netParamsEvent);
+#endif
 }
 
 static void on_device_found(void *ud, const char *mac,
                             const char *name, const char *sw, const char *ip)
 {
     printf("[设备发现] MAC=%s, 设备=%s, SW=%s, IP=%s\n", mac, name, sw, ip);
+#ifdef _WIN32
+    SetEvent(g_searchEvent);
+#endif
 }
 
-static void on_at_response(void *ud, const char *resp)
-{
-    printf("[AT响应] %s\n", resp);
-}
-
-static void on_net_params(void *ud, const char *ip,
-                          const char *mask, const char *gw)
-{
-    printf("[网络参数] IP=%s, 掩码=%s, 网关=%s\n", ip, mask, gw);
-}
-
-static void on_log(void *ud, const char *msg)
-{
-    printf("[日志] %s\n", msg);
-}
-
+static void on_log(void *ud, const char *msg) { printf("[日志] %s\n", msg); }
 static void on_hex_dump(void *ud, const char *prefix,
-                        const uint8_t *data, int len)
-{
-    (void)ud; (void)prefix; (void)data; (void)len;
-    /* 生产环境可忽略，调试时可打印十六进制 */
-}
+                        const uint8_t *data, int len) { (void)ud; (void)prefix; (void)data; (void)len; }
+static void on_error(void *ud, const char *msg) { fprintf(stderr, "[错误] %s\n", msg); }
+```
 
-static void on_error(void *ud, const char *msg)
-{
-    fprintf(stderr, "[错误] %s\n", msg);
-}
+#### 主程序流程
 
-/* ---- 主程序 ---- */
-
+```c
 int main(void)
 {
+#ifdef _WIN32
+    g_connEvent      = CreateEventW(NULL, TRUE, FALSE, NULL);
+    g_searchEvent    = CreateEventW(NULL, TRUE, FALSE, NULL);
+    g_netParamsEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
+#endif
+
     /* 1. 注册回调 */
     lora_sdk_callbacks_t cbs = {0};
     cbs.on_conn_state   = on_conn_state;
@@ -172,44 +240,74 @@ int main(void)
 
     /* 2. 初始化 SDK */
     lora_sdk_t *sdk = lora_sdk_init(&cbs, NULL);
-    if (!sdk) {
-        fprintf(stderr, "SDK 初始化失败\n");
-        return 1;
-    }
+    g_sdk = sdk;
 
-    /* 3. 搜索网关设备 */
-    printf("正在搜索设备...\n");
+    /* 3. 搜索网关 → 查询网络参数 → 自动获取网关 IP */
     lora_sdk_search_devices(sdk);
-    /* 等待 on_device_found 回调，约 5 秒超时 */
+#ifdef _WIN32
+    WaitForSingleObject(g_searchEvent, 6000);
+    ResetEvent(g_searchEvent);
+#endif
+    lora_sdk_get_net_params(sdk);
+#ifdef _WIN32
+    WaitForSingleObject(g_netParamsEvent, 6000);
+    ResetEvent(g_netParamsEvent);
+#endif
 
-    /* 4. TCP 连接网关 */
-    printf("正在连接网关...\n");
-    lora_sdk_connect(sdk, "192.168.1.254", 8899);
-    /* 等待 on_conn_state 回调报告 CONNECTED */
+    /* 4. TCP 连接网关（使用查询到的网关 IP） */
+    lora_sdk_connect(sdk, g_gatewayIp, 8899);
+#ifdef _WIN32
+    WaitForSingleObject(g_connEvent, 15000);
+    ResetEvent(g_connEvent);
+#endif
 
-    /* 5. 发送遥测帧 */
-    uint8_t telemetry[8] = {
-        0x01,           /* 类型: HANDLER */
-        0x00, 0x64,     /* X = 100 (BE) */
-        0xFF, 0x9C,     /* Y = -100 (BE) */
-        0x01,           /* 按键: 按下 */
-        0xFF, 0xFF, 0xFF /* 保留 */
-    };
-    lora_sdk_send_frame(sdk, 0x00000001, telemetry, sizeof(telemetry));
+    /* 5. 发送扫描仪帧 */
+    lora_scanner_data_t scan;
+    memset(&scan, 0, sizeof(scan));
+    scan.overbreak_valid = 1; scan.laser_valid = 1;
+    scan.coord_z_valid = 1;   scan.coord_xy_valid = 1;
+    scan.overbreak = 42; scan.laser = 12345;
+    scan.coord_x = 100; scan.coord_y = -200; scan.coord_z = 300;
+    uint8_t buf[LORA_SCANNER_FRAME_SIZE];
+    lora_scanner_pack(buf, sizeof(buf), &scan);
+    lora_sdk_send_frame(sdk, 0x00000001, buf, sizeof(buf));
 
-    /* 6. UDP 配置 LoRa 参数 */
-    lora_sdk_send_at(sdk, "AT+SPD?");        /* 查询速率 */
-    lora_sdk_send_at(sdk, "AT+SPD=7");       /* 设置速率 */
-    lora_sdk_send_at(sdk, "AT+WMODE?");      /* 查询工作模式 */
-    lora_sdk_get_net_params(sdk);            /* 查询网络参数 */
+    /* 6. UDP 查询 LoRa 参数 */
+    lora_sdk_send_at(sdk, "AT+SPD?");
+    lora_sdk_send_at(sdk, "AT+CSQ?");
 
-    /* 7. 断开连接 */
+    /* 7. 断开并清理 */
     lora_sdk_disconnect(sdk);
-
-    /* 8. 清理 */
     lora_sdk_cleanup(sdk);
     return 0;
 }
+```
+
+#### 交互式命令
+
+完整示例程序支持交互式命令行操作：
+
+| 命令 | 说明 |
+|------|------|
+| `s` | 搜索网关设备 |
+| `c` | 自动获取网关 IP 并 TCP 连接 |
+| `d` | 断开连接 |
+| `f` | 发送测试帧 |
+| `r` | 发送扫描仪帧 |
+| `n` | 查询网络参数 |
+| `a <cmd>` | 发送 AT 指令 |
+| `q` | 退出 |
+
+#### 编译运行
+
+示例程序默认使用动态链接（DLL），运行时需将 `lora_gateway_sdk.dll` 放在同目录或 PATH 中：
+
+```bash
+# CMake 构建
+cmake --build build --target lora_sdk_example
+
+# 手动编译（MSVC）
+cl lora_sdk_example.c lora_gateway_sdk.lib ws2_32.lib iphlpapi.lib
 ```
 
 ---
