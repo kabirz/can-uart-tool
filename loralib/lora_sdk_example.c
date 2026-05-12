@@ -191,10 +191,11 @@ static void on_net_params(void *ud, const char *ip,
 #endif
 }
 
-static void on_log(void *ud, const char *msg)
+static void on_log(void *ud, const char *msg,
+                   enum lora_sdk_log_source source)
 {
     (void)ud;
-    printf("[日志] %s\n", msg);
+    printf("[%s] %s\n", source == LORA_SDK_LOG_TCP ? "TCP" : "UDP", msg);
 }
 
 static void on_hex_dump(void *ud, const char *prefix,
@@ -272,6 +273,8 @@ static void do_send_scanner(lora_sdk_t *sdk)
 int main(void)
 {
 #ifdef _WIN32
+    SetConsoleOutputCP(65001);
+    SetConsoleCP(65001);
     g_connEvent      = CreateEventW(NULL, TRUE, FALSE, NULL);
     g_searchEvent    = CreateEventW(NULL, TRUE, FALSE, NULL);
     g_netParamsEvent = CreateEventW(NULL, TRUE, FALSE, NULL);

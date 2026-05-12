@@ -7,6 +7,7 @@
 #include <winsock2.h>
 #include <windows.h>
 #include <commctrl.h>
+#include <stdlib.h>
 #include <commdlg.h>
 #include "resource.h"
 #include "can_hal.h"
@@ -156,16 +157,17 @@ static void cb_on_net_params(void *ud, const char *ip,
     }
 }
 
-static void cb_on_log(void *ud, const char *message)
+static void cb_on_log(void *ud, const char *message,
+                      enum lora_sdk_log_source source)
 {
     LoraTabPair *tabs = (LoraTabPair *)ud;
     if (!message) return;
-    if (tabs->hDataTab) {
+    if (tabs->hDataTab && source == LORA_SDK_LOG_TCP) {
         char *copy = _strdup(message);
         if (copy)
             PostMessageW(tabs->hDataTab, WM_LORA_LOG, 0, (LPARAM)copy);
     }
-    if (tabs->hCfgTab) {
+    if (tabs->hCfgTab && source == LORA_SDK_LOG_UDP) {
         char *copy2 = _strdup(message);
         if (copy2)
             PostMessageW(tabs->hCfgTab, WM_LORA_LOG, 0, (LPARAM)copy2);

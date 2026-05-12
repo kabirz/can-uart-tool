@@ -143,6 +143,14 @@ static inline int lora_scanner_pack(uint8_t *buf, size_t size,
 }
 
 /* ----------------------------------------------------------------
+ * Log source — identifies which transport generated a log message
+ * ---------------------------------------------------------------- */
+enum lora_sdk_log_source {
+    LORA_SDK_LOG_TCP = 0,
+    LORA_SDK_LOG_UDP = 1,
+};
+
+/* ----------------------------------------------------------------
  * SDK callback set — protocol events only
  *
  * All callbacks fire from background threads.  Callbacks MUST NOT
@@ -172,7 +180,8 @@ typedef struct {
                           const char *mask, const char *gateway);
 
     /* General log message */
-    void (*on_log)(void *ud, const char *message);
+    void (*on_log)(void *ud, const char *message,
+                   enum lora_sdk_log_source source);
 
     /* Hex dump of sent/received raw bytes */
     void (*on_hex_dump)(void *ud, const char *prefix,

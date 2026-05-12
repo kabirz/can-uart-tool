@@ -38,7 +38,7 @@ static int parse_frame(lora_sdk_t *sdk, const uint8_t *data, int len)
         sdk->err_count++;
         char dbg[128];
         snprintf(dbg, sizeof(dbg), "CRC error! calc=%04X rx=%04X", calc_crc, rx_crc);
-        SDK_CALL(sdk, on_log, dbg);
+        SDK_CALL(sdk, on_log, dbg, LORA_SDK_LOG_TCP);
         SDK_CALL(sdk, on_hex_dump, "RX (bad CRC)", data, total);
         return total;
     }
@@ -55,7 +55,7 @@ static int parse_frame(lora_sdk_t *sdk, const uint8_t *data, int len)
 
     /* 空载荷: 不触发 on_frame */
     if (data_len == 0) {
-        SDK_CALL(sdk, on_log, "RX (empty payload, ACK)");
+        SDK_CALL(sdk, on_log, "RX (empty payload, ACK)", LORA_SDK_LOG_TCP);
         SDK_CALL(sdk, on_hex_dump, "RX", data, total);
         return total;
     }
@@ -89,7 +89,7 @@ static DWORD WINAPI tcp_recv_worker(LPVOID param)
 
         /* 缓冲区溢出保护 */
         if (sdk->tcp_rx_len + bytes > SDK_RX_BUF_MAX) {
-            SDK_CALL(sdk, on_log, "RX buffer overflow, data dropped");
+            SDK_CALL(sdk, on_log, "RX buffer overflow, data dropped", LORA_SDK_LOG_TCP);
             sdk->tcp_rx_len = 0;
         }
         memcpy(sdk->tcp_rx_buf + sdk->tcp_rx_len, buf, bytes);
@@ -128,11 +128,11 @@ static DWORD WINAPI tcp_recv_worker(LPVOID param)
                 int consumed = parse_frame(sdk, sdk->tcp_rx_buf + 2, content_len);
                 if (consumed <= 0) {
                     sdk->err_count++;
-                    SDK_CALL(sdk, on_log, "Frame parse failed, re-syncing");
+                    SDK_CALL(sdk, on_log, "Frame parse failed, re-syncing", LORA_SDK_LOG_TCP);
                 }
             } else if (content_len > 0) {
                 sdk->err_count++;
-                SDK_CALL(sdk, on_log, "Frame content too short");
+                SDK_CALL(sdk, on_log, "Frame content too short", LORA_SDK_LOG_TCP);
             }
 
             sdk->tcp_rx_len -= total_len;
@@ -166,7 +166,7 @@ static DWORD WINAPI connect_watcher(LPVOID param)
         int sel = select(0, NULL, &write_fds, NULL, &tv);
 
         if (sel == SOCKET_ERROR) {
-            SDK_CALL(sdk, on_log, "Connect failed (select error)");
+            SDK_CALL(sdk, on_log, "Connect failed (select error)", LORA_SDK_LOG_TCP);
             closesocket(sdk->tcp_sock);
             sdk->tcp_sock = INVALID_SOCKET;
             InterlockedExchange(&sdk->connected, 0);
@@ -181,7 +181,7 @@ static DWORD WINAPI connect_watcher(LPVOID param)
             if (err == 0) {
                 InterlockedExchange(&sdk->connected, 1);
                 sdk->tcp_rx_len = 0;
-                SDK_CALL(sdk, on_log, "Connected to gateway");
+                SDK_CALL(sdk, on_log, "Connected to gateway", LORA_SDK_LOG_TCP);
                 SDK_CALL(sdk, on_conn_state, LORA_SDK_CONN_CONNECTED);
 
                 InterlockedExchange(&sdk->tcp_running, 1);
@@ -190,7 +190,7 @@ static DWORD WINAPI connect_watcher(LPVOID param)
             } else {
                 char buf[128];
                 snprintf(buf, sizeof(buf), "Connect failed (error %d)", err);
-                SDK_CALL(sdk, on_log, buf);
+                SDK_CALL(sdk, on_log, buf, LORA_SDK_LOG_TCP);
                 closesocket(sdk->tcp_sock);
                 sdk->tcp_sock = INVALID_SOCKET;
                 InterlockedExchange(&sdk->connected, 0);
@@ -201,7 +201,7 @@ static DWORD WINAPI connect_watcher(LPVOID param)
     }
 
     /* 超时 */
-    SDK_CALL(sdk, on_log, "Connect failed (timeout 10s)");
+    SDK_CALL(sdk, on_log, "Connect failed (timeout 10s)", LORA_SDK_LOG_TCP);
     closesocket(sdk->tcp_sock);
     sdk->tcp_sock = INVALID_SOCKET;
     InterlockedExchange(&sdk->connected, 0);
@@ -263,7 +263,7 @@ void sdk_tcp_disconnect(lora_sdk_t *sdk)
     InterlockedExchange(&sdk->connected, 0);
     sdk->tcp_rx_len = 0;
     SDK_CALL(sdk, on_conn_state, LORA_SDK_CONN_DISCONNECTED);
-    SDK_CALL(sdk, on_log, "Disconnected");
+    SDK_CALL(sdk, on_log, "Disconnected", LORA_SDK_LOG_TCP);
 }
 
 void sdk_tcp_send_frame(lora_sdk_t *sdk, uint32_t nid,
@@ -305,5 +305,5 @@ void sdk_tcp_send_rssi(lora_sdk_t *sdk, uint32_t nid,
 
     char desc[64];
     snprintf(desc, sizeof(desc), "TX RSSI: raw=%d test=%d", (int)(int8_t)rssi, test_flag);
-    SDK_CALL(sdk, on_log, desc);
+    SDK_CALL(sdk, on_log, desc, LORA_SDK_LOG_TCP);
 }

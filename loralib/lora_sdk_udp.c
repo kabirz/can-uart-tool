@@ -76,7 +76,7 @@ static void process_response(lora_sdk_t *sdk,
     const char *start = strchr(raw, '{');
     const char *end = strrchr(raw, '}');
     if (!start || !end || end <= start) {
-        SDK_CALL(sdk, on_log, raw);
+        SDK_CALL(sdk, on_log, raw, LORA_SDK_LOG_UDP);
         return;
     }
 
@@ -88,7 +88,7 @@ static void process_response(lora_sdk_t *sdk,
 
     cJSON *root = cJSON_Parse(json_buf);
     if (!root) {
-        SDK_CALL(sdk, on_log, "RX <- (JSON parse error)");
+        SDK_CALL(sdk, on_log, "RX <- (JSON parse error)", LORA_SDK_LOG_UDP);
         return;
     }
 
@@ -114,7 +114,7 @@ static void process_response(lora_sdk_t *sdk,
         /* 所有设备信息已写入，触发回调 */
         SDK_CALL(sdk, on_device_found,
                  sdk->dev_mac, sdk->dev_name, sdk->dev_sw, from_ip);
-        SDK_CALL(sdk, on_log, "Device found!");
+        SDK_CALL(sdk, on_log, "Device found!", LORA_SDK_LOG_UDP);
     }
 
     /* --- ACK-GETPARA / ACK-SETPARA --- */
@@ -134,14 +134,14 @@ static void process_response(lora_sdk_t *sdk,
                 snprintf(sdk->dev_gw, sizeof(sdk->dev_gw), "%s", gw->valuestring);
 
             SDK_CALL(sdk, on_net_params, sdk->dev_ip, sdk->dev_sm, sdk->dev_gw);
-            SDK_CALL(sdk, on_log, "Network parameters received");
+            SDK_CALL(sdk, on_log, "Network parameters received", LORA_SDK_LOG_UDP);
         } else if (cmd_obj && cJSON_IsString(cmd_obj)) {
             /* AT 指令响应 (CMD is string) */
             const char *val = cmd_obj->valuestring;
             char log[600];
             snprintf(log, sizeof(log), "RX <- CMD: %s", val);
             SDK_CALL(sdk, on_at_response, val);
-            SDK_CALL(sdk, on_log, log);
+            SDK_CALL(sdk, on_log, log, LORA_SDK_LOG_UDP);
 
             /* 解析 GWID */
             {
@@ -166,7 +166,7 @@ static void process_response(lora_sdk_t *sdk,
                         info_len--;
 
                     if (info_len > 0)
-                        SDK_CALL(sdk, on_log, info);
+                        SDK_CALL(sdk, on_log, info, LORA_SDK_LOG_UDP);
 
                     if (sdk->pending_rssi_nid != 0) {
                         int snr_val = 0, rssi_val = -120;
@@ -201,7 +201,7 @@ static void process_response(lora_sdk_t *sdk,
     /* 格式化打印完整 JSON */
     char *fmt = cJSON_Print(root);
     if (fmt) {
-        SDK_CALL(sdk, on_log, fmt);
+        SDK_CALL(sdk, on_log, fmt, LORA_SDK_LOG_UDP);
         cJSON_free(fmt);
     }
 
@@ -231,7 +231,7 @@ static DWORD WINAPI udp_worker(LPVOID param)
         /* 已知网卡 */
         SOCKET sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         if (sock == INVALID_SOCKET) {
-            SDK_CALL(sdk, on_log, "Failed to create UDP socket");
+            SDK_CALL(sdk, on_log, "Failed to create UDP socket", LORA_SDK_LOG_UDP);
             free(work);
             return 0;
         }
@@ -248,7 +248,7 @@ static DWORD WINAPI udp_worker(LPVOID param)
             char err[128];
             snprintf(err, sizeof(err), "bind %s failed: %d",
                      sdk->local_if_ip, WSAGetLastError());
-            SDK_CALL(sdk, on_log, err);
+            SDK_CALL(sdk, on_log, err, LORA_SDK_LOG_UDP);
             closesocket(sock);
             free(work);
             return 0;
@@ -259,7 +259,7 @@ static DWORD WINAPI udp_worker(LPVOID param)
             char err[128];
             snprintf(err, sizeof(err), "sendto failed on %s: %d",
                      sdk->local_if_ip, WSAGetLastError());
-            SDK_CALL(sdk, on_log, err);
+            SDK_CALL(sdk, on_log, err, LORA_SDK_LOG_UDP);
             closesocket(sock);
             free(work);
             return 0;
@@ -268,7 +268,7 @@ static DWORD WINAPI udp_worker(LPVOID param)
         char log[1100];
         snprintf(log, sizeof(log), "TX (%s) -> %.*s",
                  sdk->local_if_ip, work->plen, (const char *)work->payload);
-        SDK_CALL(sdk, on_log, log);
+        SDK_CALL(sdk, on_log, log, LORA_SDK_LOG_UDP);
 
         u_long nbio = 1;
         ioctlsocket(sock, FIONBIO, &nbio);
@@ -282,7 +282,7 @@ static DWORD WINAPI udp_worker(LPVOID param)
 
         PIP_ADAPTER_ADDRESSES adapters = (PIP_ADAPTER_ADDRESSES)malloc(bufLen);
         if (!adapters) {
-            SDK_CALL(sdk, on_log, "Failed to enumerate adapters");
+            SDK_CALL(sdk, on_log, "Failed to enumerate adapters", LORA_SDK_LOG_UDP);
             free(work);
             return 0;
         }
@@ -291,7 +291,7 @@ static DWORD WINAPI udp_worker(LPVOID param)
                 GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
                 GAA_FLAG_SKIP_FRIENDLY_NAME,
                 NULL, adapters, &bufLen) != ERROR_SUCCESS) {
-            SDK_CALL(sdk, on_log, "GetAdaptersAddresses failed");
+            SDK_CALL(sdk, on_log, "GetAdaptersAddresses failed", LORA_SDK_LOG_UDP);
             free(adapters);
             free(work);
             return 0;
@@ -313,7 +313,7 @@ static DWORD WINAPI udp_worker(LPVOID param)
         free(adapters);
 
         if (n_if == 0) {
-            SDK_CALL(sdk, on_log, "No active IPv4 interfaces found");
+            SDK_CALL(sdk, on_log, "No active IPv4 interfaces found", LORA_SDK_LOG_UDP);
             free(work);
             return 0;
         }
@@ -341,7 +341,7 @@ static DWORD WINAPI udp_worker(LPVOID param)
                 char err[128];
                 snprintf(err, sizeof(err), "sendto failed on %s: %d",
                          ip_buf, WSAGetLastError());
-                SDK_CALL(sdk, on_log, err);
+                SDK_CALL(sdk, on_log, err, LORA_SDK_LOG_UDP);
                 closesocket(sock);
                 continue;
             }
@@ -351,7 +351,7 @@ static DWORD WINAPI udp_worker(LPVOID param)
             char log[1100];
             snprintf(log, sizeof(log), "TX (%s) -> %.*s",
                      ip_buf, work->plen, (const char *)work->payload);
-            SDK_CALL(sdk, on_log, log);
+            SDK_CALL(sdk, on_log, log, LORA_SDK_LOG_UDP);
 
             u_long nbio = 1;
             ioctlsocket(sock, FIONBIO, &nbio);
@@ -360,7 +360,7 @@ static DWORD WINAPI udp_worker(LPVOID param)
     }
 
     if (n_socks == 0) {
-        SDK_CALL(sdk, on_log, "Failed to send on any interface");
+            SDK_CALL(sdk, on_log, "Failed to send on any interface", LORA_SDK_LOG_UDP);
         free(work);
         return 0;
     }
@@ -413,7 +413,7 @@ static DWORD WINAPI udp_worker(LPVOID param)
     }
 
     if (!got_response)
-        SDK_CALL(sdk, on_log, "No response (timeout 5s)");
+        SDK_CALL(sdk, on_log, "No response (timeout 5s)", LORA_SDK_LOG_UDP);
 
     for (int i = 0; i < n_socks; i++)
         closesocket(socks[i]);
@@ -469,7 +469,7 @@ static void udp_send_at_cmd(lora_sdk_t *sdk, const char *cmd)
     cJSON_Delete(root);
 
     if (plen <= 0) {
-        SDK_CALL(sdk, on_log, "Failed to build UDP payload");
+        SDK_CALL(sdk, on_log, "Failed to build UDP payload", LORA_SDK_LOG_UDP);
         return;
     }
 
@@ -494,7 +494,7 @@ void sdk_udp_search(lora_sdk_t *sdk)
     cJSON_Delete(root);
 
     if (plen <= 0) {
-        SDK_CALL(sdk, on_log, "Failed to build search payload");
+        SDK_CALL(sdk, on_log, "Failed to build search payload", LORA_SDK_LOG_UDP);
         return;
     }
 
@@ -522,7 +522,7 @@ void sdk_udp_get_net(lora_sdk_t *sdk)
     cJSON_Delete(root);
 
     if (plen <= 0) {
-        SDK_CALL(sdk, on_log, "Failed to build payload");
+        SDK_CALL(sdk, on_log, "Failed to build payload", LORA_SDK_LOG_UDP);
         return;
     }
 

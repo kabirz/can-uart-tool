@@ -210,7 +210,7 @@ static void on_device_found(void *ud, const char *mac,
 #endif
 }
 
-static void on_log(void *ud, const char *msg) { printf("[日志] %s\n", msg); }
+static void on_log(void *ud, const char *msg, enum lora_sdk_log_source src) { printf("[%s] %s\n", src == LORA_SDK_LOG_TCP ? "TCP" : "UDP", msg); }
 static void on_hex_dump(void *ud, const char *prefix,
                         const uint8_t *data, int len) { (void)ud; (void)prefix; (void)data; (void)len; }
 static void on_error(void *ud, const char *msg) { fprintf(stderr, "[错误] %s\n", msg); }
@@ -368,7 +368,8 @@ typedef struct {
     void (*on_at_response)(void *ud, const char *at_response);
     void (*on_net_params)(void *ud, const char *ip,
                           const char *mask, const char *gateway);
-    void (*on_log)(void *ud, const char *message);
+    void (*on_log)(void *ud, const char *message,
+                   enum lora_sdk_log_source source);
     void (*on_hex_dump)(void *ud, const char *prefix,
                         const uint8_t *data, int len);
     void (*on_error)(void *ud, const char *message);
@@ -384,7 +385,7 @@ typedef struct {
 | `on_device_found` | UDP 搜索发现设备 | `mac`: MAC 地址；`device_name`: 设备名称；`sw_version`: 固件版本；`from_ip`: 设备 IP |
 | `on_at_response` | AT 指令响应 | `at_response`: 原始响应文本 |
 | `on_net_params` | 网络参数查询结果 | `ip`/`mask`/`gateway`: 网络配置 |
-| `on_log` | 日志消息 | `message`: 文本日志 |
+| `on_log` | 日志消息 | `message`: 文本日志, `source`: `LORA_SDK_LOG_TCP` / `LORA_SDK_LOG_UDP` |
 | `on_hex_dump` | 原始收发数据 | `prefix`: "TX"/"RX"；`data`/`len`: 原始字节 |
 | `on_error` | 错误通知 | `message`: 错误描述 |
 
