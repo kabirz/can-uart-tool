@@ -515,6 +515,23 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         if (dw0 < 100) dw0 = 100;
         SendMessageW(pData->hHistoryList, LVM_SETCOLUMNWIDTH, 3, dw0);
 
+        /* Disable visual themes on group boxes so WM_CTLCOLORSTATIC works */
+        {
+            typedef HRESULT (WINAPI *PFN_SetWindowTheme)(HWND, LPCWSTR, LPCWSTR);
+            HMODULE hUx = GetModuleHandleW(L"uxtheme.dll");
+            if (hUx) {
+                PFN_SetWindowTheme pFn = (PFN_SetWindowTheme)GetProcAddress(hUx, "SetWindowTheme");
+                if (pFn) {
+                    HWND child = GetWindow(hwnd, GW_CHILD);
+                    while (child) {
+                        if ((GetWindowLongPtrW(child, GWL_STYLE) & 0xF) == BS_GROUPBOX)
+                            pFn(child, L"", L"");
+                        child = GetWindow(child, GW_HWNDNEXT);
+                    }
+                }
+            }
+        }
+
         return 0;
     }
 
@@ -1018,6 +1035,16 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
         }
         return 0;
+    }
+
+    /* Group box title: blue text */
+    if (uMsg == WM_CTLCOLORSTATIC) {
+        HWND ctl = (HWND)lParam;
+        if ((GetWindowLongPtrW(ctl, GWL_STYLE) & 0xF) == BS_GROUPBOX) {
+            SetTextColor((HDC)wParam, RGB(0, 80, 180));
+            SetBkMode((HDC)wParam, TRANSPARENT);
+            return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
+        }
     }
 
     return DefWindowProcW(hwnd, uMsg, wParam, lParam);

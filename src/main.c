@@ -289,7 +289,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
         /* Create Tab Control */
         g_App.hTabCtrl = CreateWindowExW(
             0, WC_TABCONTROLW, L"",
-            WS_CHILD | WS_CLIPSIBLINGS | WS_VISIBLE,
+            WS_CHILD | WS_CLIPSIBLINGS | WS_VISIBLE | TCS_OWNERDRAWFIXED,
             0, 0, 0, 0,
             hWnd, (HMENU)IDC_TAB_CONTROL, hInst, NULL);
 
@@ -346,6 +346,39 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
         return 0;
     }
 
+    case WM_DRAWITEM: {
+        DRAWITEMSTRUCT *dis = (DRAWITEMSTRUCT *)lParam;
+        if (dis->CtlType == ODT_TAB && dis->CtlID == IDC_TAB_CONTROL) {
+            int sel = TabCtrl_GetCurSel(g_App.hTabCtrl);
+            int idx = dis->itemID;
+            HDC hdc = dis->hDC;
+            RECT rc = dis->rcItem;
+
+            /* Extend tab rect to fill gap at bottom */
+            rc.bottom += 4;
+
+            HBRUSH hBrush;
+            if (idx == sel) {
+                /* Selected: white background, blue text */
+                hBrush = CreateSolidBrush(RGB(0xFF, 0xFF, 0xFF));
+                FillRect(hdc, &rc, hBrush);
+                DeleteObject(hBrush);
+                SetTextColor(hdc, RGB(0x00, 0x78, 0xD4));
+            } else {
+                /* Unselected: light gray background, dark text */
+                FillRect(hdc, &rc, (HBRUSH)GetSysColorBrush(COLOR_BTNFACE));
+                SetTextColor(hdc, RGB(0x33, 0x33, 0x33));
+            }
+            SetBkMode(hdc, TRANSPARENT);
+
+            SelectObject(hdc, g_App.hTabFont);
+            DrawTextW(hdc, g_TabNames[idx], -1, &rc,
+                      DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            return TRUE;
+        }
+        break;
+    }
+
     case WM_NOTIFY: {
         NMHDR *pnm = (NMHDR *)lParam;
         if (pnm->idFrom == IDC_TAB_CONTROL) {
@@ -354,46 +387,6 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
                 int i;
                 for (i = 0; i < MAX_TABS; i++) {
                     ShowWindow(g_App.hTabPages[i], (i == sel) ? SW_SHOW : SW_HIDE);
-                }
-            }
-            else if (pnm->code == NM_CUSTOMDRAW) {
-                NMCUSTOMDRAW *cd = (NMCUSTOMDRAW *)lParam;
-                switch (cd->dwDrawStage) {
-                case CDDS_PREPAINT:
-                    SetWindowLongPtrW(hWnd, DWLP_MSGRESULT, CDRF_NOTIFYITEMDRAW);
-                    return TRUE;
-                case CDDS_ITEMPREPAINT: {
-                    int sel = TabCtrl_GetCurSel(g_App.hTabCtrl);
-                    int idx = (int)cd->dwItemSpec;
-                    HDC hdc = cd->hdc;
-                    RECT rc = cd->rc;
-
-                    /* Extend tab rect to fill gap at bottom */
-                    rc.bottom += 4;
-
-                    HBRUSH hBrush;
-                    if (idx == sel) {
-                        /* Selected: blue background, white text */
-                        hBrush = CreateSolidBrush(RGB(0x00, 0x78, 0xD4));
-                        FillRect(hdc, &rc, hBrush);
-                        DeleteObject(hBrush);
-                        SetTextColor(hdc, RGB(0xFF, 0xFF, 0xFF));
-                    } else {
-                        /* Unselected: light gray background, dark text */
-                        FillRect(hdc, &rc, (HBRUSH)GetSysColorBrush(COLOR_BTNFACE));
-                        SetTextColor(hdc, RGB(0x33, 0x33, 0x33));
-                    }
-                    SetBkMode(hdc, TRANSPARENT);
-
-                    /* Draw tab text centered */
-                    SelectObject(hdc, g_App.hTabFont);
-                    RECT textRc = rc;
-                    DrawTextW(hdc, g_TabNames[idx], -1, &textRc,
-                              DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-
-                    SetWindowLongPtrW(hWnd, DWLP_MSGRESULT, CDRF_SKIPDEFAULT);
-                    return TRUE;
-                }
                 }
             }
         }
