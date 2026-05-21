@@ -441,7 +441,7 @@ static void udp_send_at_cmd(lora_sdk_t *sdk, const char *cmd)
 {
     char full_cmd[256];
     if (sdk_at_ensure_crlf(cmd, full_cmd, sizeof(full_cmd)) < 0) {
-        SDK_CALL(sdk, on_error, "AT command too long");
+        SDK_CALL(sdk, on_error, "AT command too long", LORA_SDK_LOG_UDP);
         return;
     }
 
@@ -498,7 +498,7 @@ void sdk_udp_search(lora_sdk_t *sdk)
 void sdk_udp_get_net(lora_sdk_t *sdk)
 {
     if (sdk->dev_mac[0] == '\0') {
-        SDK_CALL(sdk, on_error, "Please search devices first");
+        SDK_CALL(sdk, on_error, "Please search devices first", LORA_SDK_LOG_UDP);
         return;
     }
 
@@ -526,7 +526,7 @@ void sdk_udp_get_net(lora_sdk_t *sdk)
 void sdk_udp_send_at(lora_sdk_t *sdk, const char *cmd)
 {
     if (!cmd || !cmd[0]) {
-        SDK_CALL(sdk, on_error, "Empty AT command");
+        SDK_CALL(sdk, on_error, "Empty AT command", LORA_SDK_LOG_UDP);
         return;
     }
     udp_send_at_cmd(sdk, cmd);

@@ -180,10 +180,12 @@ static void on_hex_dump(void *ud, const char *prefix,
     printf("\n");
 }
 
-static void on_error(void *ud, const char *msg)
+static void on_error(void *ud, const char *msg,
+                     enum lora_sdk_log_source source)
 {
     (void)ud;
-    fprintf(stderr, "[错误] %s\n", msg);
+    const char *src_names[] = {"TCP", "UDP", "SERIAL"};
+    fprintf(stderr, "[错误-%s] %s\n", src_names[source], msg);
 }
 
 /* ------------------------------------------------------------------ */

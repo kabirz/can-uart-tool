@@ -200,7 +200,8 @@ typedef struct {
                         const uint8_t *data, int len);
 
     /* Error notification */
-    void (*on_error)(void *ud, const char *message);
+    void (*on_error)(void *ud, const char *message,
+                     enum lora_sdk_log_source source);
 
 } lora_sdk_callbacks_t;
 

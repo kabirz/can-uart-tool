@@ -191,7 +191,7 @@ static void on_device_found(void *ud, const char *mac,
 static void on_log(void *ud, const char *msg, enum lora_sdk_log_source src) { const char *n[]={"TCP","UDP","SERIAL"}; printf("[%s] %s\n", n[src], msg); }
 static void on_hex_dump(void *ud, const char *prefix,
                         const uint8_t *data, int len) { (void)ud; (void)prefix; (void)data; (void)len; }
-static void on_error(void *ud, const char *msg) { fprintf(stderr, "[错误] %s\n", msg); }
+static void on_error(void *ud, const char *msg, enum lora_sdk_log_source s) { fprintf(stderr, "[错误-%d] %s\n", (int)s, msg); }
 ```
 
 #### 主程序流程
@@ -353,7 +353,8 @@ typedef struct {
                    enum lora_sdk_log_source source);
     void (*on_hex_dump)(void *ud, const char *prefix,
                         const uint8_t *data, int len);
-    void (*on_error)(void *ud, const char *message);
+    void (*on_error)(void *ud, const char *message,
+                     enum lora_sdk_log_source source);
 } lora_sdk_callbacks_t;
 ```
 
@@ -368,7 +369,7 @@ typedef struct {
 | `on_net_params` | 网络参数查询结果 | `ip`/`mask`/`gateway`: 网络配置 |
 | `on_log` | 日志消息 | `message`: 文本日志, `source`: `LORA_SDK_LOG_TCP`(0) / `LORA_SDK_LOG_UDP`(1) / `LORA_SDK_LOG_SERIAL`(2) |
 | `on_hex_dump` | 原始收发数据 | `prefix`: "TX"/"RX"；`data`/`len`: 原始字节 |
-| `on_error` | 错误通知 | `message`: 错误描述 |
+| `on_error` | 错误通知 | `message`: 错误描述, `source`: 错误来源（`LORA_SDK_LOG_TCP`/`UDP`/`SERIAL`） |
 
 > **重要**：所有回调均可设为 NULL（不注册）。回调在后台线程中触发，回调内禁止调用 SDK 的连接/发送函数。
 

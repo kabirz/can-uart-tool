@@ -162,16 +162,13 @@ static void cb_on_log(void *ud, const char *message,
 {
     LoraTabPair *tabs = (LoraTabPair *)ud;
     if (!message) return;
-    if (tabs->hDataTab && source == LORA_SDK_LOG_TCP) {
-        char *copy = _strdup(message);
-        if (copy)
-            PostMessageW(tabs->hDataTab, WM_LORA_LOG, 0, (LPARAM)copy);
-    }
-    if (tabs->hCfgTab && source == LORA_SDK_LOG_UDP) {
-        char *copy2 = _strdup(message);
-        if (copy2)
-            PostMessageW(tabs->hCfgTab, WM_LORA_LOG, 0, (LPARAM)copy2);
-    }
+
+    /* Route to appropriate tab based on source */
+    HWND hTarget = (source == LORA_SDK_LOG_TCP) ? tabs->hDataTab : tabs->hCfgTab;
+    if (!hTarget) return;
+
+    char *copy = _strdup(message);
+    if (copy) PostMessageW(hTarget, WM_LORA_LOG, 0, (LPARAM)copy);
 }
 
 static void cb_on_hex_dump(void *ud, const char *prefix,
@@ -187,14 +184,6 @@ static void cb_on_hex_dump(void *ud, const char *prefix,
     msg->len = len;
     memcpy(msg->data, data, len);
     PostMessageW(tabs->hDataTab, WM_LORA_HEX_DUMP, 0, (LPARAM)msg);
-}
-
-static void cb_on_error(void *ud, const char *message)
-{
-    LoraTabPair *tabs = (LoraTabPair *)ud;
-    if (!tabs->hDataTab || !message) return;
-    char *copy = _strdup(message);
-    if (copy) PostMessageW(tabs->hDataTab, WM_LORA_LOG, 0, (LPARAM)copy);
 }
 
 /* ------------------------------------------------------------------ */
@@ -623,7 +612,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     loraCbs.on_net_params   = cb_on_net_params;
     loraCbs.on_log          = cb_on_log;
     loraCbs.on_hex_dump     = cb_on_hex_dump;
-    loraCbs.on_error        = cb_on_error;
+    loraCbs.on_error        = cb_on_log;
 
     g_App.loraTabs.hDataTab = NULL;
     g_App.loraTabs.hCfgTab  = NULL;

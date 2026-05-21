@@ -37,7 +37,6 @@ static int serial_write(lora_sdk_t *sdk, const uint8_t *data, int len)
     if ((int)written != len)
         return -1;
 
-    SDK_CALL(sdk, on_hex_dump, "TX (serial)", data, len);
     return 0;
 }
 
@@ -71,8 +70,6 @@ static int serial_read_response(lora_sdk_t *sdk, char *buf, int buf_size,
             return -1;
 
         if (avail > 0) {
-            SDK_CALL(sdk, on_hex_dump, "RX (serial)", chunk, (int)avail);
-
             /* Append to output buffer */
             int space = buf_size - total - 1;
             if (space <= 0) break;
@@ -119,7 +116,7 @@ static int serial_enter_at_mode(lora_sdk_t *sdk)
     /* Step 1: send "+++" (no CR/LF), wait for "a" */
     SDK_CALL(sdk, on_log, "Entering AT mode: sending +++", LORA_SDK_LOG_SERIAL);
     if (serial_write_str(sdk, "+++") != 0) {
-        SDK_CALL(sdk, on_error, "Serial write failed (+++)");
+        SDK_CALL(sdk, on_error, "Serial write failed (+++)", LORA_SDK_LOG_SERIAL);
         return -1;
     }
 
@@ -128,14 +125,14 @@ static int serial_enter_at_mode(lora_sdk_t *sdk)
         char msg[128];
         snprintf(msg, sizeof(msg),
                  "AT mode handshake failed: expected 'a', got '%.*s'", n, rbuf);
-        SDK_CALL(sdk, on_error, msg);
+        SDK_CALL(sdk, on_error, msg, LORA_SDK_LOG_SERIAL);
         return -1;
     }
     SDK_CALL(sdk, on_log, "AT mode: received 'a'", LORA_SDK_LOG_SERIAL);
 
     /* Step 2: send "a" (no CR/LF, within 3s), wait for "+OK" */
     if (serial_write_str(sdk, "a") != 0) {
-        SDK_CALL(sdk, on_error, "Serial write failed (a)");
+        SDK_CALL(sdk, on_error, "Serial write failed (a)", LORA_SDK_LOG_SERIAL);
         return -1;
     }
 
@@ -144,7 +141,7 @@ static int serial_enter_at_mode(lora_sdk_t *sdk)
         char msg[128];
         snprintf(msg, sizeof(msg),
                  "AT mode handshake failed: expected '+OK', got '%.*s'", n, rbuf);
-        SDK_CALL(sdk, on_error, msg);
+        SDK_CALL(sdk, on_error, msg, LORA_SDK_LOG_SERIAL);
         return -1;
     }
 
@@ -193,7 +190,7 @@ static DWORD WINAPI serial_at_worker(LPVOID param)
     /* Build full command with \r\n termination */
     char full_cmd[520];
     if (sdk_at_ensure_crlf(work->cmd, full_cmd, sizeof(full_cmd)) < 0) {
-        SDK_CALL(sdk, on_error, "AT command too long");
+        SDK_CALL(sdk, on_error, "AT command too long", LORA_SDK_LOG_SERIAL);
         free(work);
         return 1;
     }
@@ -209,7 +206,7 @@ static DWORD WINAPI serial_at_worker(LPVOID param)
     }
 
     if (serial_write_str(sdk, full_cmd) != 0) {
-        SDK_CALL(sdk, on_error, "Serial AT command write failed");
+        SDK_CALL(sdk, on_error, "Serial AT command write failed", LORA_SDK_LOG_SERIAL);
         free(work);
         return 1;
     }
@@ -327,7 +324,7 @@ static DWORD WINAPI serial_device_info_worker(LPVOID param)
     lora_sdk_t *sdk = work->sdk;
 
     if (serial_enter_at_mode(sdk) != 0) {
-        SDK_CALL(sdk, on_error, "AT mode entry failed");
+        SDK_CALL(sdk, on_error, "AT mode entry failed", LORA_SDK_LOG_SERIAL);
         free(work);
         return 1;
     }
@@ -372,7 +369,7 @@ static DWORD WINAPI serial_net_params_worker(LPVOID param)
     lora_sdk_t *sdk = work->sdk;
 
     if (serial_enter_at_mode(sdk) != 0) {
-        SDK_CALL(sdk, on_error, "AT mode entry failed");
+        SDK_CALL(sdk, on_error, "AT mode entry failed", LORA_SDK_LOG_SERIAL);
         free(work);
         return 1;
     }
@@ -412,7 +409,7 @@ static DWORD WINAPI serial_net_params_worker(LPVOID param)
 void sdk_serial_query_device_info(lora_sdk_t *sdk)
 {
     if (!sdk || !InterlockedCompareExchange(&sdk->serial_open, 0, 0)) {
-        if (sdk) SDK_CALL(sdk, on_error, "Serial port not open");
+        if (sdk) SDK_CALL(sdk, on_error, "Serial port not open", LORA_SDK_LOG_SERIAL);
         return;
     }
 
@@ -425,7 +422,7 @@ void sdk_serial_query_device_info(lora_sdk_t *sdk)
 void sdk_serial_query_net_params(lora_sdk_t *sdk)
 {
     if (!sdk || !InterlockedCompareExchange(&sdk->serial_open, 0, 0)) {
-        if (sdk) SDK_CALL(sdk, on_error, "Serial port not open");
+        if (sdk) SDK_CALL(sdk, on_error, "Serial port not open", LORA_SDK_LOG_SERIAL);
         return;
     }
 
@@ -471,7 +468,7 @@ int sdk_serial_open(lora_sdk_t *sdk, const char *com_port, int baud_rate)
         char msg[128];
         snprintf(msg, sizeof(msg), "Failed to open %s (error %lu)",
                  port_path, GetLastError());
-        SDK_CALL(sdk, on_error, msg);
+        SDK_CALL(sdk, on_error, msg, LORA_SDK_LOG_SERIAL);
         return -1;
     }
 
@@ -483,7 +480,7 @@ int sdk_serial_open(lora_sdk_t *sdk, const char *com_port, int baud_rate)
     dcb.DCBlength = sizeof(dcb);
     if (!GetCommState(h, &dcb)) {
         CloseHandle(h);
-        SDK_CALL(sdk, on_error, "GetCommState failed");
+        SDK_CALL(sdk, on_error, "GetCommState failed", LORA_SDK_LOG_SERIAL);
         return -1;
     }
 
@@ -497,7 +494,7 @@ int sdk_serial_open(lora_sdk_t *sdk, const char *com_port, int baud_rate)
 
     if (!SetCommState(h, &dcb)) {
         CloseHandle(h);
-        SDK_CALL(sdk, on_error, "SetCommState failed");
+        SDK_CALL(sdk, on_error, "SetCommState failed", LORA_SDK_LOG_SERIAL);
         return -1;
     }
 
@@ -548,12 +545,12 @@ void sdk_serial_close(lora_sdk_t *sdk)
 void sdk_serial_send_at(lora_sdk_t *sdk, const char *cmd)
 {
     if (!sdk || !cmd || !cmd[0]) {
-        if (sdk) SDK_CALL(sdk, on_error, "Empty AT command");
+        if (sdk) SDK_CALL(sdk, on_error, "Empty AT command", LORA_SDK_LOG_SERIAL);
         return;
     }
 
     if (!InterlockedCompareExchange(&sdk->serial_open, 0, 0)) {
-        SDK_CALL(sdk, on_error, "Serial port not open");
+        SDK_CALL(sdk, on_error, "Serial port not open", LORA_SDK_LOG_SERIAL);
         return;
     }
 

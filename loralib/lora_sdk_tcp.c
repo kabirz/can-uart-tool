@@ -212,7 +212,7 @@ void sdk_tcp_connect(lora_sdk_t *sdk, const char *ip, int port)
 {
     sdk->tcp_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (sdk->tcp_sock == INVALID_SOCKET) {
-        SDK_CALL(sdk, on_error, "Failed to create socket");
+        SDK_CALL(sdk, on_error, "Failed to create socket", LORA_SDK_LOG_TCP);
         return;
     }
 
@@ -231,7 +231,7 @@ void sdk_tcp_connect(lora_sdk_t *sdk, const char *ip, int port)
     if (ret == SOCKET_ERROR && WSAGetLastError() != WSAEWOULDBLOCK) {
         closesocket(sdk->tcp_sock);
         sdk->tcp_sock = INVALID_SOCKET;
-        SDK_CALL(sdk, on_error, "Connect failed");
+        SDK_CALL(sdk, on_error, "Connect failed", LORA_SDK_LOG_TCP);
         SDK_CALL(sdk, on_conn_state, LORA_SDK_CONN_DISCONNECTED);
         return;
     }
