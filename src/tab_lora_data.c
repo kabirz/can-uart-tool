@@ -67,6 +67,9 @@ typedef struct {
     HWND hBtnConnect;
     HWND hNidText;
     HWND hTestCheck;
+    HWND hLabelIp;
+    HWND hLabelPort;
+    HWND hLabelNid;
 
     /* Telemetry group */
     HWND hXText;
@@ -131,6 +134,22 @@ static HWND CreateLabel(HWND hParent, HINSTANCE hInst, int id,
         x, y, w, h, hParent, (HMENU)(INT_PTR)id, hInst, NULL);
     SendMessageW(hw, WM_SETFONT, (WPARAM)hFont, TRUE);
     return hw;
+}
+
+static void LayoutConnControls(TAB_LORA_DATA *pData, int gX, int gW, int gY, int gH) {
+    int y = gY + 22 + ((gH - 30) - 26) / 2;
+    int lh = 22, ch = 24, bh = 26;
+    int w1=28, e1=160, w2=44, e2=70, bw=100, w3=38, n3=100, tw=110;
+    int sp=10;
+    int x = gX + 14;
+    MoveWindow(pData->hLabelIp, x, y+3, w1, lh, TRUE); x += w1;
+    MoveWindow(pData->hEditIp, x, y, e1, ch, TRUE); x += e1 + sp;
+    MoveWindow(pData->hLabelPort, x, y+3, w2, lh, TRUE); x += w2;
+    MoveWindow(pData->hEditPort, x, y, e2, ch, TRUE); x += e2 + sp;
+    MoveWindow(pData->hBtnConnect, x, y, bw, bh, TRUE); x += bw + sp;
+    MoveWindow(pData->hLabelNid, x, y+3, w3, lh, TRUE); x += w3;
+    MoveWindow(pData->hNidText, x, y+3, n3, lh, TRUE); x += n3 + sp;
+    MoveWindow(pData->hTestCheck, x, y+2, tw, ch, TRUE);
 }
 
 /* Parse hex data bytes from a space-separated string, return count */
@@ -276,58 +295,51 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
             L"Consolas");
 
         int margin = 14;
-        int lineH = 30;
+        int lineH = 36;
         int cx, cy;
 
         /* ========== Group 1: Connection (top, full width, ~80px) ========== */
         int grp1X = margin, grp1Y = margin;
         int grp1W = pageW - 2 * margin;
-        int grp1H = 80;
+        int grp1H = 70;
         pData->hGrpConn = CreateWindowExW(0, L"BUTTON", L"连接",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             grp1X, grp1Y, grp1W, grp1H, hwnd, NULL, hInst, NULL);
 
-        cx = grp1X + 14;
-        cy = grp1Y + 26;
-
-        /* Row 1: IP + Port + Connect button (status shown on button text) */
-        CreateLabel(hwnd, hInst, -1, cx, cy + 3, 26, 22, L"IP:", pData->hFont);
+        pData->hLabelIp = CreateLabel(hwnd, hInst, -1, 0, 0, 28, 22, L"IP:", pData->hFont);
         pData->hEditIp = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT",
             L"192.168.2.100",
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-            cx + 30, cy, 160, 24, hwnd, (HMENU)IDC_LORA_IP_EDIT, hInst, NULL);
+            0, 0, 160, 24, hwnd, (HMENU)IDC_LORA_IP_EDIT, hInst, NULL);
         SendMessageW(pData->hEditIp, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
 
-        int ox = cx + 198;
-        CreateLabel(hwnd, hInst, -1, ox, cy + 3, 42, 22, L"端口:", pData->hFont);
+        pData->hLabelPort = CreateLabel(hwnd, hInst, -1, 0, 0, 44, 22, L"端口:", pData->hFont);
         pData->hEditPort = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT",
             L"1234",
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-            ox + 46, cy, 70, 24, hwnd, (HMENU)IDC_LORA_PORT_EDIT, hInst, NULL);
+            0, 0, 70, 24, hwnd, (HMENU)IDC_LORA_PORT_EDIT, hInst, NULL);
         SendMessageW(pData->hEditPort, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
 
-        ox += 122;
         pData->hBtnConnect = CreateWindowExW(0, L"BUTTON", L"连接",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            ox, cy, 90, 26,
+            0, 0, 100, 26,
             hwnd, (HMENU)IDC_LORA_CONNECT_BTN, hInst, NULL);
         SendMessageW(pData->hBtnConnect, WM_SETFONT, (WPARAM)pData->hFontBold, TRUE);
 
-        /* Row 2: NID + Test mode */
-        cy += lineH;
-        CreateLabel(hwnd, hInst, -1, cx, cy + 3, 34, 22, L"NID:", pData->hFont);
+        pData->hLabelNid = CreateLabel(hwnd, hInst, -1, 0, 0, 38, 22, L"NID:", pData->hFont);
         pData->hNidText = CreateWindowExW(0, L"STATIC", L"00000000",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
-            cx + 38, cy + 3, 100, 22,
+            0, 0, 100, 22,
             hwnd, (HMENU)IDC_LORA_NID_TEXT, hInst, NULL);
         SendMessageW(pData->hNidText, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
 
-        ox = cx + 150;
         pData->hTestCheck = CreateWindowExW(0, L"BUTTON", L"测试模式",
             WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-            ox, cy + 2, 110, 24,
+            0, 0, 110, 24,
             hwnd, (HMENU)IDC_LORA_TEST_CHECK, hInst, NULL);
         SendMessageW(pData->hTestCheck, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+
+        LayoutConnControls(pData, grp1X, grp1W, grp1Y, grp1H);
 
         /* ========== Group 2: Middle (split left/right) ========== */
         int grp2Y = grp1Y + grp1H + 8;
@@ -426,7 +438,7 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
             hwnd, (HMENU)IDC_LORA_SEND_EDIT, hInst, NULL);
         SendMessageW(pData->hSendEdit, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
 
-        ox = cx + 408;
+        int ox = cx + 408;
         pData->hBtnSend = CreateWindowExW(0, L"BUTTON", L"发送",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             ox, cy, 80, 26,
@@ -933,13 +945,13 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         if (cx < 100 || cy < 100) return 0;
 
         int margin = 14;
-        int grp1H = 80;
+        int grp1H = 70;
         int grp2H = 180;
         int grp3H = 50;
 
-        /* Group 1: Connection - full width, fixed height */
         int grp1W = cx - 2 * margin;
         MoveWindow(pData->hGrpConn, margin, margin, grp1W, grp1H, TRUE);
+        LayoutConnControls(pData, margin, grp1W, margin, grp1H);
 
         /* Group 2: Middle split */
         int grp2Y = margin + grp1H + 8;
