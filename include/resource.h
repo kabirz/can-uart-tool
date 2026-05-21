@@ -150,6 +150,14 @@
 #define IDC_CFG_LOG_EDIT                1452
 #define IDC_CFG_CLEAR_BTN               1453
 
+// Tab4: LoRa 配置 — Socket (SOCKA) (1460-1465)
+#define IDC_CFG_SOCKA_MODE_COMBO        1460
+#define IDC_CFG_SOCKA_IP_EDIT           1461
+#define IDC_CFG_SOCKA_RPORT_EDIT        1462
+#define IDC_CFG_SOCKA_LPORT_EDIT        1463
+#define IDC_CFG_SOCKA_SET               1464
+#define IDC_CFG_SOCKA_QUERY             1465
+
 // Custom messages
 #define WM_UPDATE_PROGRESS              (WM_APP + 1)
 #define WM_UPDATE_COMPLETE              (WM_APP + 2)

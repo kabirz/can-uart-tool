@@ -98,6 +98,14 @@ typedef struct {
     HWND hLogEdit;
     HWND hBtnClear;
 
+    /* Group 2 extras: Socket (SOCKA) — inside Network Settings group */
+    HWND hComboSockaMode;
+    HWND hEditSockaIp;
+    HWND hEditSockaRPort;
+    HWND hEditSockaLPort;
+    HWND hBtnSockaSet;
+    HWND hBtnSockaQuery;
+
     /* Resizable group boxes */
     HWND hGrpDev;
     HWND hGrpNet;
@@ -411,6 +419,30 @@ static void ParseAtResponse(TAB_LORA_CFG *pData, const char *resp)
             }
         }
     }
+
+    /* +SOCKA:<mode>,<ip>,<remote_port>,<local_port> */
+    {
+        const char *sp = strstr(resp, "+SOCKA:");
+        if (sp) {
+            sp += 7;
+            char mode[8] = {0}, ip[64] = {0};
+            int rport = 0, lport = 0;
+            if (sscanf(sp, "%7[^,],%63[^,],%d,%d", mode, ip, &rport, &lport) >= 4) {
+                if (strcmp(mode, "TCPC") == 0)
+                    SendMessageW(pData->hComboSockaMode, CB_SETCURSEL, 0, 0);
+                else if (strcmp(mode, "TCPS") == 0)
+                    SendMessageW(pData->hComboSockaMode, CB_SETCURSEL, 1, 0);
+
+                wchar_t wip[64], wrp[16], wlp[16];
+                MultiByteToWideChar(CP_ACP, 0, ip, -1, wip, 64);
+                wsprintfW(wrp, L"%d", rport);
+                wsprintfW(wlp, L"%d", lport);
+                SetWindowTextW(pData->hEditSockaIp, wip);
+                SetWindowTextW(pData->hEditSockaRPort, wrp);
+                SetWindowTextW(pData->hEditSockaLPort, wlp);
+            }
+        }
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -518,7 +550,7 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         /* ========== Group 2: Network Settings ========== */
         int grp2Y = grp1Y + grp1H + 6;
         int grp2W = pageW - 2 * margin;
-        int grp2H = 140;
+        int grp2H = 210;
         pData->hGrpNet = CreateWindowExW(0, L"BUTTON", L"网络设置",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             margin, grp2Y, grp2W, grp2H, hwnd, NULL, hInst, NULL);
@@ -594,6 +626,41 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
             ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
         ox += smallBtnW + 6;
         pData->hBtnGwQuery = CreateBtn(hwnd, hInst, IDC_CFG_GW_QUERY,
+            ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
+        cy += lineH;
+
+        /* Row 4: SOCKA mode + IP */
+        ox = cx;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 4, 60, 20, L"SOCKA:", pData->hFont);
+        ox += 64;
+        pData->hComboSockaMode = CreateCombo(hwnd, hInst, IDC_CFG_SOCKA_MODE_COMBO,
+            ox, cy, 80, 200, pData->hFont);
+        SendMessageW(pData->hComboSockaMode, CB_ADDSTRING, 0, (LPARAM)L"TCPC");
+        SendMessageW(pData->hComboSockaMode, CB_ADDSTRING, 0, (LPARAM)L"TCPS");
+        SendMessageW(pData->hComboSockaMode, CB_SETCURSEL, 0, 0);
+        ox += 86;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 4, 60, 20, L"IP:", pData->hFont);
+        ox += 64;
+        pData->hEditSockaIp = CreateEdit(hwnd, hInst, IDC_CFG_SOCKA_IP_EDIT,
+            ox, cy, 180, 26, L"192.168.1.100", pData->hFontMono, 0);
+        cy += lineH;
+
+        /* Row 5: SOCKA remote port + local port + buttons */
+        ox = cx;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 4, 84, 20, L"远程端口:", pData->hFont);
+        ox += 88;
+        pData->hEditSockaRPort = CreateEdit(hwnd, hInst, IDC_CFG_SOCKA_RPORT_EDIT,
+            ox, cy, 80, 26, L"1883", pData->hFontMono, 0);
+        ox += 86;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 4, 84, 20, L"本地端口:", pData->hFont);
+        ox += 88;
+        pData->hEditSockaLPort = CreateEdit(hwnd, hInst, IDC_CFG_SOCKA_LPORT_EDIT,
+            ox, cy, 80, 26, L"1234", pData->hFontMono, 0);
+        ox += 86;
+        pData->hBtnSockaSet = CreateBtn(hwnd, hInst, IDC_CFG_SOCKA_SET,
+            ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
+        ox += smallBtnW + 6;
+        pData->hBtnSockaQuery = CreateBtn(hwnd, hInst, IDC_CFG_SOCKA_QUERY,
             ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
 
         /* ========== Group 3: LoRa Protocol ========== */
@@ -982,6 +1049,28 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
             return 0;
         }
 
+        /* ---- Socket (SOCKA) ---- */
+        case IDC_CFG_SOCKA_SET: {
+            int modeSel = (int)SendMessageW(pData->hComboSockaMode, CB_GETCURSEL, 0, 0);
+            const char *mode = modeSel == 0 ? "TCPC" : "TCPS";
+            wchar_t wip[64], wrp[16], wlp[16];
+            GetWindowTextW(pData->hEditSockaIp, wip, 64);
+            GetWindowTextW(pData->hEditSockaRPort, wrp, 16);
+            GetWindowTextW(pData->hEditSockaLPort, wlp, 16);
+            char ipA[64], rpA[16], lpA[16];
+            WideCharToMultiByte(CP_ACP, 0, wip, -1, ipA, 64, NULL, NULL);
+            WideCharToMultiByte(CP_ACP, 0, wrp, -1, rpA, 16, NULL, NULL);
+            WideCharToMultiByte(CP_ACP, 0, wlp, -1, lpA, 16, NULL, NULL);
+            char cmd[256];
+            snprintf(cmd, sizeof(cmd), "AT+SOCKA=%s,%s,%s,%s", mode, ipA, rpA, lpA);
+            SendAtCmd(pData, cmd);
+            return 0;
+        }
+
+        case IDC_CFG_SOCKA_QUERY:
+            SendAtCmd(pData, "AT+SOCKA?");
+            return 0;
+
         /* ---- Group 4: AT command ---- */
         case IDC_CFG_SEND_BTN: {
             wchar_t wbuf[256];
@@ -1089,9 +1178,9 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
 
         int margin = 14;
         int grp1H = 94;
-        int grp2H = 140;
+        int grp2H = 210;   /* Network + SOCKA */
         int grp3H = 130;
-        int grp4H = 56;
+        int grp4H = 56;    /* AT command */
 
         /* Group 1: full width, fixed height */
         int grp1W = cx - 2 * margin;
@@ -1108,12 +1197,12 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         int grp3W = grp1W;
         MoveWindow(pData->hGrpProto, margin, grp3Y, grp3W, grp3H, TRUE);
 
-        /* Group 4: full width, fixed height */
+        /* Group 4: AT command, full width, fixed height */
         int grp4Y = grp3Y + grp3H + 6;
         int grp4W = grp1W;
         MoveWindow(pData->hGrpAt, margin, grp4Y, grp4W, grp4H, TRUE);
 
-        /* Group 5: full width, stretch height */
+        /* Group 5: Log, full width, stretch height */
         int grp5Y = grp4Y + grp4H + 6;
         int grp5W = grp1W;
         int grp5H = cy - grp5Y - margin;
