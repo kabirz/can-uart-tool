@@ -43,11 +43,6 @@ static int parse_frame(lora_sdk_t *sdk, const uint8_t *data, int len)
         return total;
     }
 
-    if (sdk->nid != 0 && nid != sdk->nid) {
-        SDK_CALL(sdk, on_hex_dump, "RX (NID mismatch)", data, total);
-        return total;
-    }
-
     sdk->nid = nid;
     sdk->rx_count++;
 
@@ -262,6 +257,7 @@ void sdk_tcp_disconnect(lora_sdk_t *sdk)
     stop_recv_thread(sdk);
     InterlockedExchange(&sdk->connected, 0);
     sdk->tcp_rx_len = 0;
+    sdk->nid = 0;
     SDK_CALL(sdk, on_conn_state, LORA_SDK_CONN_DISCONNECTED);
     SDK_CALL(sdk, on_log, "Disconnected", LORA_SDK_LOG_TCP);
 }

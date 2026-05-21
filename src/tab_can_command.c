@@ -204,6 +204,16 @@ static void AppendMonitorLine(TAB_CMD_DATA *pData, int is_tx,
     wcscat(line + pos, L"\r\n");
 
     int len = GetWindowTextLengthW(hMon);
+
+    /* Trim old content when approaching Edit control limit (~32KB) */
+    if (len > 30000) {
+        /* Remove first quarter of text to make room */
+        int cutLen = len / 4;
+        SendMessageW(hMon, EM_SETSEL, 0, cutLen);
+        SendMessageW(hMon, EM_REPLACESEL, FALSE, (LPARAM)L"");
+        len = GetWindowTextLengthW(hMon);
+    }
+
     SendMessageW(hMon, EM_SETSEL, len, len);
     SendMessageW(hMon, EM_REPLACESEL, FALSE, (LPARAM)line);
 
