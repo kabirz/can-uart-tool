@@ -128,5 +128,7 @@ void sdk_udp_send_at(lora_sdk_t *sdk, const char *cmd);
 int  sdk_serial_open(lora_sdk_t *sdk, const char *com_port, int baud_rate);
 void sdk_serial_close(lora_sdk_t *sdk);
 void sdk_serial_send_at(lora_sdk_t *sdk, const char *cmd);
+void sdk_serial_query_device_info(lora_sdk_t *sdk);
+void sdk_serial_query_net_params(lora_sdk_t *sdk);
 
 #endif /* LORA_SDK_INTERNAL_H */

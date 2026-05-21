@@ -47,7 +47,7 @@ static int serial_write_str(lora_sdk_t *sdk, const char *str)
     return serial_write(sdk, (const uint8_t *)str, (int)strlen(str));
 }
 
-/* Read from serial port with timeout. Stops early on +OK or +ERROR.
+/* Read from serial port with timeout. Stops early on OK or ERR-.
  * Returns number of bytes read (may be 0 on timeout), -1 on error.
  * Response is null-terminated in 'buf'. */
 static int serial_read_response(lora_sdk_t *sdk, char *buf, int buf_size,
@@ -82,7 +82,7 @@ static int serial_read_response(lora_sdk_t *sdk, char *buf, int buf_size,
             buf[total] = '\0';
 
             /* Check for end-of-response markers */
-            if (strstr(buf, "+OK") || strstr(buf, "+ERROR"))
+            if (strstr(buf, "OK") || strstr(buf, "ERR-"))
                 break;
         }
 
@@ -133,7 +133,7 @@ static int serial_enter_at_mode(lora_sdk_t *sdk)
     }
     SDK_CALL(sdk, on_log, "AT mode: received 'a'", LORA_SDK_LOG_SERIAL);
 
-    /* Step 2: send "a" (no CR/LF), wait for "+OK" */
+    /* Step 2: send "a" (no CR/LF, within 3s), wait for "+OK" */
     if (serial_write_str(sdk, "a") != 0) {
         SDK_CALL(sdk, on_error, "Serial write failed (a)");
         return -1;
@@ -160,8 +160,8 @@ static void serial_exit_at_mode(lora_sdk_t *sdk)
 
     SDK_CALL(sdk, on_log, "Exiting AT mode", LORA_SDK_LOG_SERIAL);
 
-    /* Send AT+EXIT to leave AT mode */
-    serial_write_str(sdk, "AT+EXIT\r\n");
+    /* Send AT+ENTM to leave AT mode */
+    serial_write_str(sdk, "AT+ENTM\r\n");
 
     /* Brief wait for response, then purge */
     Sleep(200);
@@ -227,6 +227,211 @@ static DWORD WINAPI serial_at_worker(LPVOID param)
 
     free(work);
     return 0;
+}
+
+/* ================================================================
+ * Response parsing helpers
+ * ================================================================ */
+
+/* Strip trailing "\r\nOK" or "OK" from AT command response.
+ * AT command responses have format: "+CMD:value\r\nOK\r\n"
+ * After sdk_at_trim_response() they become: "+CMD:value\r\nOK"
+ * This strips the remaining "OK" (and preceding \r\n). */
+static void serial_strip_trailing_ok(char *buf)
+{
+    int len = (int)strlen(buf);
+
+    /* Remove trailing "OK" */
+    if (len >= 2 && strcmp(buf + len - 2, "OK") == 0) {
+        len -= 2;
+        buf[len] = '\0';
+    }
+
+    /* Remove any remaining trailing \r\n */
+    while (len > 0 && (buf[len - 1] == '\r' || buf[len - 1] == '\n')) {
+        buf[--len] = '\0';
+    }
+}
+
+/* Extract value from "+PREFIX:value" format response.
+ * Returns value length, or -1 if prefix not found. */
+static int serial_extract_value(const char *response, const char *prefix,
+                                 char *out, int out_size)
+{
+    const char *p = strstr(response, prefix);
+    if (!p) return -1;
+
+    p += strlen(prefix);
+    if (*p == ':') p++; /* skip colon if present in prefix */
+
+    int i = 0;
+    while (p[i] && p[i] != '\r' && p[i] != '\n' && i < out_size - 1) {
+        out[i] = p[i];
+        i++;
+    }
+    out[i] = '\0';
+    return i;
+}
+
+/* ================================================================
+ * Serial device info / network params — worker threads
+ * ================================================================ */
+
+/* Send one AT command synchronously (called from worker thread).
+ * Returns response in buf (null-terminated, with trailing OK stripped),
+ * or NULL on failure. */
+static const char *serial_at_sync(lora_sdk_t *sdk, const char *cmd,
+                                   char *buf, int buf_size)
+{
+    char full_cmd[520];
+    if (sdk_at_ensure_crlf(cmd, full_cmd, sizeof(full_cmd)) < 0)
+        return NULL;
+
+    serial_purge_rx(sdk);
+
+    {
+        char log[600];
+        snprintf(log, sizeof(log), "TX -> %s", cmd);
+        SDK_CALL(sdk, on_log, log, LORA_SDK_LOG_SERIAL);
+    }
+
+    if (serial_write_str(sdk, full_cmd) != 0)
+        return NULL;
+
+    int n = serial_read_response(sdk, buf, buf_size, SERIAL_AT_TIMEOUT_MS);
+    if (n <= 0) {
+        SDK_CALL(sdk, on_log, "AT command timeout", LORA_SDK_LOG_SERIAL);
+        return NULL;
+    }
+
+    sdk_at_trim_response(buf, n);
+    serial_strip_trailing_ok(buf);
+
+    {
+        char log[600];
+        snprintf(log, sizeof(log), "RX <- %s", buf);
+        SDK_CALL(sdk, on_log, log, LORA_SDK_LOG_SERIAL);
+    }
+
+    return buf;
+}
+
+typedef struct {
+    lora_sdk_t *sdk;
+} serial_info_work_t;
+
+/* Worker: query device info via AT commands */
+static DWORD WINAPI serial_device_info_worker(LPVOID param)
+{
+    serial_info_work_t *work = (serial_info_work_t *)param;
+    lora_sdk_t *sdk = work->sdk;
+
+    if (serial_enter_at_mode(sdk) != 0) {
+        SDK_CALL(sdk, on_error, "AT mode entry failed");
+        free(work);
+        return 1;
+    }
+
+    char rbuf[SERIAL_RX_BUF_SIZE];
+    const char *resp;
+    char value[128];
+
+    /* AT+INMDL? — device model → dev_name */
+    resp = serial_at_sync(sdk, "AT+INMDL?", rbuf, sizeof(rbuf));
+    if (resp && serial_extract_value(resp, "+INMDL:", value, sizeof(value)) > 0) {
+        snprintf(sdk->dev_name, sizeof(sdk->dev_name), "%s", value);
+    }
+
+    /* AT+VER? — firmware version → dev_sw */
+    resp = serial_at_sync(sdk, "AT+VER?", rbuf, sizeof(rbuf));
+    if (resp && serial_extract_value(resp, "+VER:", value, sizeof(value)) > 0) {
+        snprintf(sdk->dev_sw, sizeof(sdk->dev_sw), "%s", value);
+    }
+
+    /* AT+MAC? — MAC address → dev_mac */
+    resp = serial_at_sync(sdk, "AT+MAC?", rbuf, sizeof(rbuf));
+    if (resp && serial_extract_value(resp, "+MAC:", value, sizeof(value)) > 0) {
+        snprintf(sdk->dev_mac, sizeof(sdk->dev_mac), "%s", value);
+    }
+
+    /* Also store local serial "address" for reference */
+    snprintf(sdk->dev_addr, sizeof(sdk->dev_addr), "SERIAL");
+
+    SDK_CALL(sdk, on_log, "Device info queried via serial", LORA_SDK_LOG_SERIAL);
+    SDK_CALL(sdk, on_device_found,
+             sdk->dev_mac, sdk->dev_name, sdk->dev_sw, "SERIAL");
+
+    free(work);
+    return 0;
+}
+
+/* Worker: query network params via AT commands */
+static DWORD WINAPI serial_net_params_worker(LPVOID param)
+{
+    serial_info_work_t *work = (serial_info_work_t *)param;
+    lora_sdk_t *sdk = work->sdk;
+
+    if (serial_enter_at_mode(sdk) != 0) {
+        SDK_CALL(sdk, on_error, "AT mode entry failed");
+        free(work);
+        return 1;
+    }
+
+    char rbuf[SERIAL_RX_BUF_SIZE];
+    const char *resp = serial_at_sync(sdk, "AT+WANN?", rbuf, sizeof(rbuf));
+
+    if (resp) {
+        /* Response format: +WANN:<mode,address,mask,gateway>
+         * e.g.: +WANN:STATIC,192.168.1.100,255.255.255.0,192.168.1.1
+         *   or: +WANN:DHCP,192.168.1.100,255.255.255.0,192.168.1.1 */
+        char wan_val[128];
+        if (serial_extract_value(resp, "+WANN:", wan_val, sizeof(wan_val)) > 0) {
+            char mode[16] = "", ip[64] = "", mask[64] = "", gw[64] = "";
+            sscanf(wan_val, "%15[^,],%63[^,],%63[^,],%63s", mode, ip, mask, gw);
+
+            snprintf(sdk->dev_ip, sizeof(sdk->dev_ip), "%s", ip);
+            snprintf(sdk->dev_sm, sizeof(sdk->dev_sm), "%s", mask);
+            snprintf(sdk->dev_gw, sizeof(sdk->dev_gw), "%s", gw);
+
+            {
+                char log[256];
+                snprintf(log, sizeof(log), "WAN: mode=%s IP=%s mask=%s GW=%s",
+                         mode, ip, mask, gw);
+                SDK_CALL(sdk, on_log, log, LORA_SDK_LOG_SERIAL);
+            }
+        }
+    }
+
+    SDK_CALL(sdk, on_net_params, sdk->dev_ip, sdk->dev_sm, sdk->dev_gw);
+
+    free(work);
+    return 0;
+}
+
+/* Launch a device info query over serial */
+void sdk_serial_query_device_info(lora_sdk_t *sdk)
+{
+    if (!sdk || !InterlockedCompareExchange(&sdk->serial_open, 0, 0)) {
+        if (sdk) SDK_CALL(sdk, on_error, "Serial port not open");
+        return;
+    }
+
+    serial_info_work_t work_init = { sdk };
+    sdk_at_launch_worker(serial_device_info_worker, &work_init,
+                          sizeof(work_init));
+}
+
+/* Launch a network params query over serial */
+void sdk_serial_query_net_params(lora_sdk_t *sdk)
+{
+    if (!sdk || !InterlockedCompareExchange(&sdk->serial_open, 0, 0)) {
+        if (sdk) SDK_CALL(sdk, on_error, "Serial port not open");
+        return;
+    }
+
+    serial_info_work_t work_init = { sdk };
+    sdk_at_launch_worker(serial_net_params_worker, &work_init,
+                          sizeof(work_init));
 }
 
 /* ================================================================

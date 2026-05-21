@@ -551,7 +551,7 @@ int lora_sdk_serial_open(lora_sdk_t *sdk, const char *com_port, int baud_rate);
 void lora_sdk_serial_close(lora_sdk_t *sdk);
 ```
 
-关闭串口并退出 AT 模式。自动发送 `AT+EXIT` 退出 AT 模式后关闭串口句柄。
+关闭串口并退出 AT 模式。自动发送 `AT+ENTM` 退出 AT 模式后关闭串口句柄。
 
 #### `lora_sdk_serial_is_open`
 
@@ -587,7 +587,7 @@ int lora_sdk_get_at_transport(lora_sdk_t *sdk);
 SDK 在首次 `lora_sdk_send_at()` 调用时自动完成 AT 模式进入握手：
 
 ```
-发送 "+++" → 等待 "a" 响应 → 发送 "a" → 等待 "+OK" 响应 → 进入 AT 模式
+发送 "+++" → 等待 "a" 响应 → 3s 内发送 "a" → 等待 "+OK" 响应 → 进入 AT 模式
 ```
 
 - 首次命令自动进入 AT 模式，后续命令复用已有 AT 模式
@@ -612,7 +612,7 @@ lora_sdk_set_at_transport(sdk, LORA_SDK_AT_TRANSPORT_UDP);
 lora_sdk_serial_close(sdk);         // 退出 AT 模式并关闭串口
 ```
 
-> 注意：`lora_sdk_search_devices()` 和 `lora_sdk_get_net_params()` 仅支持 UDP，串口模式下不可用。
+> 注意：`lora_sdk_search_devices()` 和 `lora_sdk_get_net_params()` 在串口模式下会自动切换到 AT 指令查询（`AT+INMDL?`/`AT+VER?`/`AT+MAC?` 和 `AT+WANN?`），触发相同的回调。无需手动区分传输方式。
 
 ---
 
@@ -896,5 +896,5 @@ SDK 内部集成了以下库，客户无需额外获取：
 4. **重连**：断开后可直接再次调用 `lora_sdk_connect()`，无需重新初始化 SDK。
 5. **多实例**：支持创建多个 `lora_sdk_t` 实例连接不同网关。
 6. **DLL 线程安全**：DLL 版本在 `DllMain` 中初始化 Winsock，支持多进程加载。
-7. **搜索前置**：UDP 模式的 `lora_sdk_send_at()` 需要先执行 `lora_sdk_search_devices()` 获取设备 MAC 地址。串口模式无需搜索，直接 `lora_sdk_serial_open()` 后即可使用 `lora_sdk_send_at()`。`lora_sdk_search_devices()` 和 `lora_sdk_get_net_params()` 始终走 UDP，不受 AT 传输方式影响。
+7. **搜索前置**：UDP 模式的 `lora_sdk_send_at()` 需要先执行 `lora_sdk_search_devices()` 获取设备 MAC 地址。串口模式无需搜索，直接 `lora_sdk_serial_open()` 后即可使用。`lora_sdk_search_devices()` 和 `lora_sdk_get_net_params()` 会根据当前传输方式自动选择 UDP 或串口 AT 指令实现。
 8. **网卡枚举**：`lora_sdk_search_devices()` 自动枚举所有活跃非回环 IPv4 网卡并发送广播。

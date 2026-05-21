@@ -108,12 +108,20 @@ LORA_SDK_API void lora_sdk_send_rssi_response(lora_sdk_t *sdk, uint32_t nid,
 LORA_SDK_API void lora_sdk_search_devices(lora_sdk_t *sdk)
 {
     if (!sdk) return;
+    if (sdk->at_transport == LORA_SDK_AT_TRANSPORT_SERIAL) {
+        sdk_serial_query_device_info(sdk);
+        return;
+    }
     sdk_udp_search(sdk);
 }
 
 LORA_SDK_API void lora_sdk_get_net_params(lora_sdk_t *sdk)
 {
     if (!sdk) return;
+    if (sdk->at_transport == LORA_SDK_AT_TRANSPORT_SERIAL) {
+        sdk_serial_query_net_params(sdk);
+        return;
+    }
     sdk_udp_get_net(sdk);
 }
 
