@@ -158,6 +158,14 @@
 #define IDC_CFG_SOCKA_SET               1464
 #define IDC_CFG_SOCKA_QUERY             1465
 
+// Transport & serial controls
+#define IDC_CFG_TRANSPORT_COMBO         1470
+#define IDC_CFG_COMPORT_COMBO           1471
+#define IDC_CFG_BAUD_COMBO              1472
+#define IDC_CFG_SERIAL_OPEN_BTN         1473
+#define IDC_CFG_SERIAL_STATUS           1474
+#define IDC_CFG_SERIAL_REFRESH_BTN      1475
+
 // Custom messages
 #define WM_UPDATE_PROGRESS              (WM_APP + 1)
 #define WM_UPDATE_COMPLETE              (WM_APP + 2)

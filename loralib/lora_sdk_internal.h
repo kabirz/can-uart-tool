@@ -84,6 +84,12 @@ struct lora_sdk {
     char             dev_name[64];
     char             dev_sw[32];
     char             local_if_ip[64];
+
+    /* 串口状态 (sdk_serial_* 函数读写) */
+    HANDLE           serial_handle;
+    volatile LONG    serial_open;
+    int              at_transport;
+    int              serial_at_mode;
 };
 
 /* ================================================================
@@ -117,5 +123,10 @@ void sdk_tcp_send_rssi(lora_sdk_t *sdk, uint32_t nid,
 void sdk_udp_search(lora_sdk_t *sdk);
 void sdk_udp_get_net(lora_sdk_t *sdk);
 void sdk_udp_send_at(lora_sdk_t *sdk, const char *cmd);
+
+/* lora_sdk_serial.c */
+int  sdk_serial_open(lora_sdk_t *sdk, const char *com_port, int baud_rate);
+void sdk_serial_close(lora_sdk_t *sdk);
+void sdk_serial_send_at(lora_sdk_t *sdk, const char *cmd);
 
 #endif /* LORA_SDK_INTERNAL_H */

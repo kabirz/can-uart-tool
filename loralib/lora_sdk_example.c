@@ -1,16 +1,17 @@
 /*
- * lora_sdk_example.c -- LoRa Gateway SDK 最小示例程序
+ * lora_sdk_example.c -- LoRa Gateway SDK 示例程序
  *
  * 演示功能：
  *   1. 初始化 SDK 并注册回调
  *   2. UDP 搜索网关设备
  *   3. TCP 连接网关
  *   4. 收发数据帧（遥测 + 扫描仪）
- *   5. UDP 查询网络参数 / AT 指令
- *   6. 交互式命令行
+ *   5. UDP / 串口 AT 指令
+ *   6. 查询网络参数
+ *   7. 交互式命令行
  *
  * 编译（动态链接 DLL）：
- *   cl lora_sdk_example.c lora_gateway_sdk.lib ws2_32.lib iphlpapi.lib
+ *   cl lora_sdk_example.c lora_gateway_sdk.lib ws2_32.lib iphlpapi.lib setupapi.lib
  *   运行时需要 lora_gateway_sdk.dll 在同目录或 PATH 中
  */
 
@@ -164,7 +165,8 @@ static void on_log(void *ud, const char *msg,
                    enum lora_sdk_log_source source)
 {
     (void)ud;
-    printf("[%s] %s\n", source == LORA_SDK_LOG_TCP ? "TCP" : "UDP", msg);
+    const char *src_names[] = {"TCP", "UDP", "SERIAL"};
+    printf("[%s] %s\n", src_names[source], msg);
 }
 
 static void on_hex_dump(void *ud, const char *prefix,
@@ -192,16 +194,23 @@ static void print_help(void)
 {
     printf(
         "\n=== LoRa SDK 示例程序 ===\n"
-        "命令:\n"
-        "  s          搜索网关设备\n"
-        "  c          TCP 连接网关\n"
-        "  d          断开连接\n"
-        "  f          发送测试帧\n"
-        "  r          发送扫描仪帧\n"
-        "  n          查询网络参数\n"
-        "  a <cmd>    发送 AT 指令 (如: a AT+SPD?)\n"
-        "  h          显示帮助\n"
-        "  q          退出\n"
+        "--- UDP 操作 ---\n"
+        "  s              搜索网关设备\n"
+        "  c              TCP 连接网关 (自动获取 IP)\n"
+        "  d              断开 TCP 连接\n"
+        "  n              查询网络参数\n"
+        "--- 数据帧 ---\n"
+        "  f              发送测试帧\n"
+        "  r              发送扫描仪帧\n"
+        "--- AT 指令 ---\n"
+        "  a <cmd>        发送 AT 指令 (UDP)\n"
+        "--- 串口 AT 指令 ---\n"
+        "  o <COM> [baud] 打开串口 (如: o COM3 115200)\n"
+        "  x              关闭串口\n"
+        "  t <mode>       切换 AT 传输方式 (t udp / t serial)\n"
+        "--- 其他 ---\n"
+        "  h              显示帮助\n"
+        "  q              退出\n"
         "\n");
 }
 
@@ -341,6 +350,53 @@ int main(void)
                 lora_sdk_send_at(sdk, atcmd);
             } else {
                 printf("用法: a <AT指令>\n");
+            }
+            break;
+        }
+
+        /* Serial port commands */
+        case 'o': {
+            char arg[256] = "";
+            int baud = 115200;
+            sscanf(line + 1, "%255s %d", arg, &baud);
+            if (arg[0]) {
+                printf("打开串口: %s (%d baud)\n", arg, baud);
+                int ret = lora_sdk_serial_open(sdk, arg, baud);
+                if (ret == 0) {
+                    lora_sdk_set_at_transport(sdk, LORA_SDK_AT_TRANSPORT_SERIAL);
+                    printf("串口已打开，AT 传输已切换为串口模式\n");
+                }
+            } else {
+                printf("用法: o <COM口> [波特率]\n");
+                printf("示例: o COM3 115200\n");
+            }
+            break;
+        }
+
+        case 'x':
+            lora_sdk_serial_close(sdk);
+            lora_sdk_set_at_transport(sdk, LORA_SDK_AT_TRANSPORT_UDP);
+            printf("串口已关闭，AT 传输已切换为 UDP 模式\n");
+            break;
+
+        case 't': {
+            char arg[32] = "";
+            sscanf(line + 1, "%31s", arg);
+            if (strcmp(arg, "serial") == 0 || strcmp(arg, "s") == 0) {
+                if (lora_sdk_serial_is_open(sdk)) {
+                    lora_sdk_set_at_transport(sdk, LORA_SDK_AT_TRANSPORT_SERIAL);
+                    printf("AT 传输方式: 串口\n");
+                } else {
+                    printf("错误: 请先打开串口 (o 命令)\n");
+                }
+            } else if (strcmp(arg, "udp") == 0 || strcmp(arg, "u") == 0) {
+                lora_sdk_set_at_transport(sdk, LORA_SDK_AT_TRANSPORT_UDP);
+                printf("AT 传输方式: UDP\n");
+            } else {
+                printf("用法: t udp / t serial\n");
+                printf("当前传输: %s\n",
+                       lora_sdk_get_at_transport(sdk) == LORA_SDK_AT_TRANSPORT_SERIAL
+                           ? "串口" : "UDP");
             }
             break;
         }

@@ -9,6 +9,7 @@
  */
 
 #include "lora_sdk_internal.h"
+#include "lora_sdk_at.h"
 #include "cJSON.h"
 
 #include <iphlpapi.h>
@@ -427,31 +428,24 @@ static DWORD WINAPI udp_worker(LPVOID param)
 
 static void udp_send_raw(lora_sdk_t *sdk, const uint8_t *payload, int plen)
 {
-    udp_work_t *work = (udp_work_t *)calloc(1, sizeof(udp_work_t));
-    if (!work) return;
-    work->plen = plen;
-    memcpy(work->payload, payload, plen);
-    work->sdk = sdk;
-    CloseHandle(CreateThread(NULL, 0, udp_worker, work, 0, NULL));
+    udp_work_t work_init;
+    memset(&work_init, 0, sizeof(work_init));
+    work_init.plen = plen;
+    memcpy(work_init.payload, payload, plen);
+    work_init.sdk = sdk;
+
+    sdk_at_launch_worker(udp_worker, &work_init, sizeof(work_init));
 }
 
 static void udp_send_at_cmd(lora_sdk_t *sdk, const char *cmd)
 {
-    size_t clen = strlen(cmd);
     char full_cmd[256];
-    if (clen >= 2 && cmd[clen - 2] == '\r' && cmd[clen - 1] == '\n')
-        snprintf(full_cmd, sizeof(full_cmd), "%s", cmd);
-    else
-        snprintf(full_cmd, sizeof(full_cmd), "%s\r\n", cmd);
-
-    const char *msg_type = "GETPARA";
-    {
-        size_t flen = strlen(full_cmd);
-        while (flen > 0 && (full_cmd[flen - 1] == '\r' || full_cmd[flen - 1] == '\n'))
-            flen--;
-        if (flen > 0 && full_cmd[flen - 1] != '?')
-            msg_type = "SETPARA";
+    if (sdk_at_ensure_crlf(cmd, full_cmd, sizeof(full_cmd)) < 0) {
+        SDK_CALL(sdk, on_error, "AT command too long");
+        return;
     }
+
+    const char *msg_type = sdk_at_is_query(full_cmd) ? "GETPARA" : "SETPARA";
 
     const char *mac = sdk->dev_mac[0] ? sdk->dev_mac : "D4AD20ED63C4";
 

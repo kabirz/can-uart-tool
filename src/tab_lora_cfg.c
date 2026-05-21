@@ -7,6 +7,8 @@
  */
 #include <windows.h>
 #include <commctrl.h>
+#include <setupapi.h>
+#include <devguid.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -112,6 +114,17 @@ typedef struct {
     HWND hGrpProto;
     HWND hGrpAt;
     HWND hGrpLog;
+    HWND hGrpTransport;
+
+    /* Transport & serial controls */
+    HWND hComboTransport;
+    HWND hComboComPort;
+    HWND hComboBaud;
+    HWND hBtnSerialOpen;
+    HWND hBtnSerialRefresh;
+    HWND hSerialStatus;
+    HWND hLblComPort;
+    HWND hLblBaud;
 
     /* Fonts */
     HFONT hFont;
@@ -446,6 +459,109 @@ static void ParseAtResponse(TAB_LORA_CFG *pData, const char *resp)
 }
 
 /* ------------------------------------------------------------------ */
+/*  Transport / Serial helpers                                        */
+/* ------------------------------------------------------------------ */
+
+/* Enable or disable controls based on selected transport */
+static void UpdateTransportUI(TAB_LORA_CFG *pData)
+{
+    int sel = (int)SendMessageW(pData->hComboTransport, CB_GETCURSEL, 0, 0);
+    int isSerial = (sel == 1); /* index 0=UDP, 1=串口 */
+    int serialOpen = 0;
+    int showSerial = isSerial ? SW_SHOW : SW_HIDE;
+
+    if (pData->sdk)
+        serialOpen = lora_sdk_serial_is_open(pData->sdk);
+
+    /* Serial port controls: show only when serial transport selected */
+    ShowWindow(pData->hLblComPort,         showSerial);
+    ShowWindow(pData->hComboComPort,       showSerial);
+    ShowWindow(pData->hBtnSerialRefresh,   showSerial);
+    ShowWindow(pData->hLblBaud,            showSerial);
+    ShowWindow(pData->hComboBaud,          showSerial);
+    ShowWindow(pData->hBtnSerialOpen,      showSerial);
+    ShowWindow(pData->hSerialStatus,       showSerial);
+
+    /* Update open/close button text */
+    if (serialOpen)
+        SetWindowTextW(pData->hBtnSerialOpen, L"关闭串口");
+    else
+        SetWindowTextW(pData->hBtnSerialOpen, L"打开串口");
+
+    /* Update status text */
+    if (serialOpen) {
+        SetWindowTextW(pData->hSerialStatus, L"已连接");
+    } else {
+        SetWindowTextW(pData->hSerialStatus, L"未连接");
+    }
+
+    /* UDP-only buttons: disabled when serial mode */
+    EnableWindow(pData->hBtnSearch, !isSerial);
+    EnableWindow(pData->hBtnGetNet, !isSerial);
+
+    /* Update SDK transport */
+    if (pData->sdk) {
+        if (isSerial)
+            lora_sdk_set_at_transport(pData->sdk, LORA_SDK_AT_TRANSPORT_SERIAL);
+        else
+            lora_sdk_set_at_transport(pData->sdk, LORA_SDK_AT_TRANSPORT_UDP);
+    }
+}
+
+/* Enumerate available COM ports using SetupAPI (same approach as firmware upgrade) */
+static void EnumerateComPorts(HWND hCombo)
+{
+    SendMessageW(hCombo, CB_RESETCONTENT, 0, 0);
+
+    HDEVINFO deviceInfoSet = SetupDiGetClassDevs(&GUID_DEVCLASS_PORTS, 0, 0, DIGCF_PRESENT);
+    if (deviceInfoSet == INVALID_HANDLE_VALUE)
+        return;
+
+    SP_DEVINFO_DATA deviceInfoData;
+    deviceInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+
+    for (DWORD i = 0; i < 128; i++) {
+        if (!SetupDiEnumDeviceInfo(deviceInfoSet, i, &deviceInfoData))
+            break;
+
+        /* Get friendly name */
+        WCHAR descW[256] = {0};
+        DWORD dataType = 0;
+        if (!SetupDiGetDeviceRegistryPropertyW(deviceInfoSet, &deviceInfoData,
+                SPDRP_FRIENDLYNAME, &dataType, (PBYTE)descW, sizeof(descW), NULL)) {
+            /* Fallback to device description */
+            if (!SetupDiGetDeviceRegistryPropertyW(deviceInfoSet, &deviceInfoData,
+                    SPDRP_DEVICEDESC, &dataType, (PBYTE)descW, sizeof(descW), NULL))
+                continue;
+        }
+
+        /* Filter out Bluetooth serial ports */
+        WCHAR descLower[256] = {0};
+        for (int j = 0; descW[j] && j < 255; j++)
+            descLower[j] = (WCHAR)tolower(descW[j]);
+        if (wcsstr(descLower, L"bluetooth") || wcsstr(descLower, L"蓝牙"))
+            continue;
+
+        /* Extract COM port number from "(COMx)" */
+        WCHAR *comStart = wcsstr(descW, L"(COM");
+        if (comStart) {
+            comStart += 4; /* skip "(COM" */
+            wchar_t port[16];
+            wsprintfW(port, L"COM%d", _wtoi(comStart));
+            /* Avoid duplicates */
+            if (SendMessageW(hCombo, CB_FINDSTRINGEXACT, (WPARAM)-1, (LPARAM)port) == CB_ERR)
+                SendMessageW(hCombo, CB_ADDSTRING, 0, (LPARAM)port);
+        }
+    }
+
+    SetupDiDestroyDeviceInfoList(deviceInfoSet);
+
+    /* Select first item if any ports found */
+    if (SendMessageW(hCombo, CB_GETCOUNT, 0, 0) > 0)
+        SendMessageW(hCombo, CB_SETCURSEL, 0, 0);
+}
+
+/* ------------------------------------------------------------------ */
 /*  WndProc for the tab page                                          */
 /* ------------------------------------------------------------------ */
 static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
@@ -499,8 +615,72 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         int smallBtnH = 28;
         int cx, cy, ox;
 
+        /* ========== Group 0: Transport Selection ========== */
+        int grp0Y = margin;
+        int grp0W = pageW - 2 * margin;
+        int grp0H = 62;
+        pData->hGrpTransport = CreateWindowExW(0, L"BUTTON", L"连接方式",
+            WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+            margin, grp0Y, grp0W, grp0H, hwnd, NULL, hInst, NULL);
+
+        cx = margin + 14;
+        cy = grp0Y + 26;
+
+        /* Transport combo */
+        ox = cx;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 96, 24, L"传输方式:", pData->hFont);
+        ox += 100;
+        pData->hComboTransport = CreateCombo(hwnd, hInst, IDC_CFG_TRANSPORT_COMBO,
+            ox, cy, 140, 240, pData->hFont);
+        SendMessageW(pData->hComboTransport, CB_ADDSTRING, 0, (LPARAM)L"UDP (网络)");
+        SendMessageW(pData->hComboTransport, CB_ADDSTRING, 0, (LPARAM)L"串口 (COM)");
+        SendMessageW(pData->hComboTransport, CB_SETCURSEL, 0, 0);
+        ox += 156;
+
+        /* COM port */
+        pData->hLblComPort = CreateLabel(hwnd, hInst, -1, ox, cy + 2, 72, 24,
+                                          L"COM口:", pData->hFont);
+        ox += 76;
+        pData->hComboComPort = CreateCombo(hwnd, hInst, IDC_CFG_COMPORT_COMBO,
+            ox, cy, 80, 200, pData->hFont);
+        EnumerateComPorts(pData->hComboComPort);
+        ox += 86;
+        pData->hBtnSerialRefresh = CreateBtn(hwnd, hInst, IDC_CFG_SERIAL_REFRESH_BTN,
+            ox, cy, 50, btnH, L"刷新", pData->hFont);
+        ox += 62;
+
+        /* Baud rate */
+        pData->hLblBaud = CreateLabel(hwnd, hInst, -1, ox, cy + 2, 72, 24,
+                                       L"波特率:", pData->hFont);
+        ox += 76;
+        pData->hComboBaud = CreateCombo(hwnd, hInst, IDC_CFG_BAUD_COMBO,
+            ox, cy, 90, 200, pData->hFont);
+        {
+            wchar_t baudStrs[][8] = { L"9600", L"19200", L"38400", L"57600", L"115200" };
+            int baudVals[] = { 9600, 19200, 38400, 57600, 115200 };
+            for (int i = 0; i < 5; i++) {
+                int idx = (int)SendMessageW(pData->hComboBaud, CB_ADDSTRING,
+                                             0, (LPARAM)baudStrs[i]);
+                SendMessageW(pData->hComboBaud, CB_SETITEMDATA, idx, (LPARAM)baudVals[i]);
+            }
+        }
+        SendMessageW(pData->hComboBaud, CB_SETCURSEL, 4, 0); /* default 115200 */
+        ox += 102;
+
+        /* Open/Close button */
+        pData->hBtnSerialOpen = CreateBtn(hwnd, hInst, IDC_CFG_SERIAL_OPEN_BTN,
+            ox, cy, 90, btnH, L"打开串口", pData->hFont);
+        ox += 100;
+
+        /* Status */
+        pData->hSerialStatus = CreateLabel(hwnd, hInst, IDC_CFG_SERIAL_STATUS,
+            ox, cy + 2, 100, 24, L"未连接", pData->hFont);
+
+        /* Apply initial transport UI state */
+        UpdateTransportUI(pData);
+
         /* ========== Group 1: Device Discovery ========== */
-        int grp1Y = margin;
+        int grp1Y = grp0Y + grp0H + 6;
         int grp1W = pageW - 2 * margin;
         int grp1H = 94;
         pData->hGrpDev = CreateWindowExW(0, L"BUTTON", L"设备发现",
@@ -857,6 +1037,55 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
     case WM_COMMAND:
         switch (LOWORD(wParam)) {
 
+        /* ---- Group 0: Transport & serial ---- */
+        case IDC_CFG_TRANSPORT_COMBO:
+            if (HIWORD(wParam) == CBN_SELCHANGE)
+                UpdateTransportUI(pData);
+            return 0;
+
+        case IDC_CFG_COMPORT_COMBO:
+            /* User changed COM port — no action needed, just remember selection */
+            return 0;
+
+        case IDC_CFG_BAUD_COMBO:
+            /* User changed baud rate — no action needed, read when opening */
+            return 0;
+
+        case IDC_CFG_SERIAL_OPEN_BTN: {
+            if (!pData->sdk) return 0;
+
+            int serialOpen = lora_sdk_serial_is_open(pData->sdk);
+            if (serialOpen) {
+                /* Close */
+                lora_sdk_serial_close(pData->sdk);
+                AppendLog(pData, "串口已关闭");
+                UpdateTransportUI(pData);
+            } else {
+                /* Open — read COM port and baud from combo */
+                wchar_t wPort[32];
+                GetWindowTextW(pData->hComboComPort, wPort, 32);
+                char port[32];
+                WideCharToMultiByte(CP_ACP, 0, wPort, -1, port, 32, NULL, NULL);
+
+                int baudSel = (int)SendMessageW(pData->hComboBaud, CB_GETCURSEL, 0, 0);
+                int baud = (int)SendMessageW(pData->hComboBaud, CB_GETITEMDATA, baudSel, 0);
+                if (baud <= 0) baud = 115200;
+
+                if (lora_sdk_serial_open(pData->sdk, port, baud) == 0) {
+                    char log[128];
+                    snprintf(log, sizeof(log), "串口 %s 已打开 (%d baud)", port, baud);
+                    AppendLog(pData, log);
+                }
+                UpdateTransportUI(pData);
+            }
+            return 0;
+        }
+
+        case IDC_CFG_SERIAL_REFRESH_BTN:
+            EnumerateComPorts(pData->hComboComPort);
+            AppendLog(pData, "COM 端口列表已刷新");
+            return 0;
+
         /* ---- Group 1: Device discovery ---- */
         case IDC_CFG_SEARCH_BTN:
             if (pData->sdk)
@@ -1177,18 +1406,25 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         if (cx < 100 || cy < 100) return 0;
 
         int margin = 14;
+        int grp0H = 62;    /* Transport */
         int grp1H = 94;
         int grp2H = 210;   /* Network + SOCKA */
         int grp3H = 130;
         int grp4H = 56;    /* AT command */
 
+        /* Group 0: Transport, full width, fixed height */
+        int grp0Y = margin;
+        int grp0W = cx - 2 * margin;
+        if (grp0W < 200) grp0W = 200;
+        MoveWindow(pData->hGrpTransport, margin, grp0Y, grp0W, grp0H, TRUE);
+
         /* Group 1: full width, fixed height */
-        int grp1W = cx - 2 * margin;
-        if (grp1W < 200) grp1W = 200;
-        MoveWindow(pData->hGrpDev, margin, margin, grp1W, grp1H, TRUE);
+        int grp1Y = grp0Y + grp0H + 6;
+        int grp1W = grp0W;
+        MoveWindow(pData->hGrpDev, margin, grp1Y, grp1W, grp1H, TRUE);
 
         /* Group 2: full width, fixed height */
-        int grp2Y = margin + grp1H + 6;
+        int grp2Y = grp1Y + grp1H + 6;
         int grp2W = grp1W;
         MoveWindow(pData->hGrpNet, margin, grp2Y, grp2W, grp2H, TRUE);
 

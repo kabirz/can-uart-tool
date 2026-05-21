@@ -40,6 +40,8 @@ LORA_SDK_API lora_sdk_t *lora_sdk_init(const lora_sdk_callbacks_t *callbacks,
     sdk->cbs = *callbacks;
     sdk->user_data = user_data;
     sdk->tcp_sock = INVALID_SOCKET;
+    sdk->serial_handle = INVALID_HANDLE_VALUE;
+    sdk->at_transport = LORA_SDK_AT_TRANSPORT_UDP;
 
     return sdk;
 }
@@ -50,6 +52,9 @@ LORA_SDK_API void lora_sdk_cleanup(lora_sdk_t *sdk)
 
     /* Disconnect and wait for threads */
     sdk_tcp_disconnect(sdk);
+
+    /* Close serial port if open */
+    sdk_serial_close(sdk);
 
     if (sdk->tcp_connect_thread) {
         WaitForSingleObject(sdk->tcp_connect_thread, 3000);
@@ -115,7 +120,10 @@ LORA_SDK_API void lora_sdk_get_net_params(lora_sdk_t *sdk)
 LORA_SDK_API void lora_sdk_send_at(lora_sdk_t *sdk, const char *at_cmd)
 {
     if (!sdk) return;
-    sdk_udp_send_at(sdk, at_cmd);
+    if (sdk->at_transport == LORA_SDK_AT_TRANSPORT_SERIAL)
+        sdk_serial_send_at(sdk, at_cmd);
+    else
+        sdk_udp_send_at(sdk, at_cmd);
 }
 
 LORA_SDK_API void lora_sdk_query_rssi(lora_sdk_t *sdk, uint32_t nid)
@@ -137,6 +145,41 @@ LORA_SDK_API int lora_sdk_build_frame(uint8_t *out, size_t out_size,
                                        uint16_t data_len)
 {
     return sdk_build_frame(out, out_size, nid, data, data_len);
+}
+
+/* ================================================================
+ * Serial operations
+ * ================================================================ */
+
+LORA_SDK_API int lora_sdk_serial_open(lora_sdk_t *sdk,
+                                       const char *com_port, int baud_rate)
+{
+    if (!sdk) return -1;
+    return sdk_serial_open(sdk, com_port, baud_rate);
+}
+
+LORA_SDK_API void lora_sdk_serial_close(lora_sdk_t *sdk)
+{
+    if (!sdk) return;
+    sdk_serial_close(sdk);
+}
+
+LORA_SDK_API int lora_sdk_serial_is_open(lora_sdk_t *sdk)
+{
+    if (!sdk) return 0;
+    return InterlockedCompareExchange(&sdk->serial_open, 0, 0) ? 1 : 0;
+}
+
+LORA_SDK_API void lora_sdk_set_at_transport(lora_sdk_t *sdk, int transport)
+{
+    if (!sdk) return;
+    sdk->at_transport = transport;
+}
+
+LORA_SDK_API int lora_sdk_get_at_transport(lora_sdk_t *sdk)
+{
+    if (!sdk) return LORA_SDK_AT_TRANSPORT_UDP;
+    return sdk->at_transport;
 }
 
 /* ================================================================

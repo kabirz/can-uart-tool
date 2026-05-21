@@ -5,6 +5,8 @@ set(LORA_SDK_SOURCES
     lora_sdk_net.c
     lora_sdk_tcp.c
     lora_sdk_udp.c
+    lora_sdk_serial.c
+    lora_sdk_at.c
     crc16.c
     cJSON.c
 )

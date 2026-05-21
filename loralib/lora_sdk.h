@@ -146,9 +146,16 @@ static inline int lora_scanner_pack(uint8_t *buf, size_t size,
  * Log source — identifies which transport generated a log message
  * ---------------------------------------------------------------- */
 enum lora_sdk_log_source {
-    LORA_SDK_LOG_TCP = 0,
-    LORA_SDK_LOG_UDP = 1,
+    LORA_SDK_LOG_TCP    = 0,
+    LORA_SDK_LOG_UDP    = 1,
+    LORA_SDK_LOG_SERIAL = 2,
 };
+
+/* ----------------------------------------------------------------
+ * AT command transport — selects UDP or serial for AT commands
+ * ---------------------------------------------------------------- */
+#define LORA_SDK_AT_TRANSPORT_UDP    0
+#define LORA_SDK_AT_TRANSPORT_SERIAL 1
 
 /* ----------------------------------------------------------------
  * SDK callback set — protocol events only
@@ -226,6 +233,25 @@ LORA_SDK_API void lora_sdk_send_at(lora_sdk_t *sdk, const char *at_cmd);
 
 /* Query gateway RSSI via UDP and send response back to 'nid' via TCP */
 LORA_SDK_API void lora_sdk_query_rssi(lora_sdk_t *sdk, uint32_t nid);
+
+/* ----------------------------------------------------------------
+ * Serial operations — direct UART AT command transport
+ * ---------------------------------------------------------------- */
+
+/* Open serial port for AT commands. Default baud_rate is 115200. */
+LORA_SDK_API int  lora_sdk_serial_open(lora_sdk_t *sdk,
+                                        const char *com_port, int baud_rate);
+
+/* Close serial port and exit AT mode if active */
+LORA_SDK_API void lora_sdk_serial_close(lora_sdk_t *sdk);
+
+/* Returns non-zero if serial port is open */
+LORA_SDK_API int  lora_sdk_serial_is_open(lora_sdk_t *sdk);
+
+/* Select transport for lora_sdk_send_at().
+ * LORA_SDK_AT_TRANSPORT_UDP (0, default) or LORA_SDK_AT_TRANSPORT_SERIAL (1). */
+LORA_SDK_API void lora_sdk_set_at_transport(lora_sdk_t *sdk, int transport);
+LORA_SDK_API int  lora_sdk_get_at_transport(lora_sdk_t *sdk);
 
 /* ----------------------------------------------------------------
  * Test mode — affects RSSI response test_flag field

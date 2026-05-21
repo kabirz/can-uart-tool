@@ -16,7 +16,7 @@ LoRa Gateway SDK 提供 LoRa 网关（USR-LG210-L）的 TCP 数据流通信与 U
 | 数据帧收发 | TCP | 与 LoRa 终端设备进行双向二进制帧通信 |
 | 设备发现 | UDP | 局域网广播搜索 USR-LG210-L 网关 |
 | 网络参数查询 | UDP | 获取网关 IP / 子网掩码 / 默认网关 |
-| AT 指令透传 | UDP | 远程配置 LoRa 模块参数（速率/信道/功率等） |
+| AT 指令透传 | UDP / 串口 | 远程或本地配置 LoRa 模块参数（速率/信道/功率等） |
 
 ### 线程模型
 
@@ -29,9 +29,13 @@ LoRa Gateway SDK 提供 LoRa 网关（USR-LG210-L）的 TCP 数据流通信与 U
     |                      |                      |
     |    on_conn_state <---|                      +--> 帧解析 --> on_frame / on_log / on_hex_dump
     |                      |
-    |-- lora_sdk_send_at --|---> udp_worker 线程
+    |-- lora_sdk_send_at --|---> udp_worker 线程 (UDP 模式)
     |                      |        |
-    |    on_at_response <--|        +--> JSON 解析 --> on_device_found / on_net_params / on_at_response
+    |                      |        +--> JSON 解析 --> on_device_found / on_net_params / on_at_response
+    |                      |
+    |                      |---> serial_at_worker 线程 (串口模式)
+    |                      |        |
+    |    on_at_response <--|        +--> AT 模式握手 --> 收发 --> on_at_response / on_log / on_hex_dump
 ```
 
 - 所有回调在 SDK 后台线程中触发
@@ -184,7 +188,7 @@ static void on_device_found(void *ud, const char *mac,
 #endif
 }
 
-static void on_log(void *ud, const char *msg, enum lora_sdk_log_source src) { printf("[%s] %s\n", src == LORA_SDK_LOG_TCP ? "TCP" : "UDP", msg); }
+static void on_log(void *ud, const char *msg, enum lora_sdk_log_source src) { const char *n[]={"TCP","UDP","SERIAL"}; printf("[%s] %s\n", n[src], msg); }
 static void on_hex_dump(void *ud, const char *prefix,
                         const uint8_t *data, int len) { (void)ud; (void)prefix; (void)data; (void)len; }
 static void on_error(void *ud, const char *msg) { fprintf(stderr, "[错误] %s\n", msg); }
@@ -270,6 +274,9 @@ int main(void)
 | `r` | 发送扫描仪帧 |
 | `n` | 查询网络参数 |
 | `a <cmd>` | 发送 AT 指令 |
+| `o <COM> [baud]` | 打开串口（如 `o COM3 115200`），自动切换为串口 AT 模式 |
+| `x` | 关闭串口，切换回 UDP 模式 |
+| `t <udp\|serial>` | 手动切换 AT 传输方式 |
 | `q` | 退出 |
 
 #### 编译运行
@@ -359,7 +366,7 @@ typedef struct {
 | `on_device_found` | UDP 搜索发现设备 | `mac`: MAC 地址；`device_name`: 设备名称；`sw_version`: 固件版本；`from_ip`: 设备 IP |
 | `on_at_response` | AT 指令响应 | `at_response`: 原始响应文本 |
 | `on_net_params` | 网络参数查询结果 | `ip`/`mask`/`gateway`: 网络配置 |
-| `on_log` | 日志消息 | `message`: 文本日志, `source`: `LORA_SDK_LOG_TCP` / `LORA_SDK_LOG_UDP` |
+| `on_log` | 日志消息 | `message`: 文本日志, `source`: `LORA_SDK_LOG_TCP`(0) / `LORA_SDK_LOG_UDP`(1) / `LORA_SDK_LOG_SERIAL`(2) |
 | `on_hex_dump` | 原始收发数据 | `prefix`: "TX"/"RX"；`data`/`len`: 原始字节 |
 | `on_error` | 错误通知 | `message`: 错误描述 |
 
@@ -514,6 +521,98 @@ void lora_sdk_send_at(lora_sdk_t *sdk, const char *at_cmd);
 
 > **前置条件**：需先调用 `lora_sdk_search_devices()` 成功发现设备。
 > **超时**：5 秒内未收到响应触发日志 `"No response (timeout 5s)"`。
+
+---
+
+### 串口操作
+
+串口模式支持通过物理 COM 口直接连接网关进行 AT 指令配置，无需网络连接。AT 指令内容与 UDP 模式完全相同。
+
+#### `lora_sdk_serial_open`
+
+```c
+int lora_sdk_serial_open(lora_sdk_t *sdk, const char *com_port, int baud_rate);
+```
+
+打开串口连接网关。
+
+| 参数 | 说明 |
+|------|------|
+| `sdk` | SDK 实例 |
+| `com_port` | COM 口名称（如 `"COM3"` 或 `"\\\\.\\COM3"`） |
+| `baud_rate` | 波特率（默认 `115200`，传 0 使用默认值） |
+| **返回值** | 0 成功，-1 失败（通过 `on_error` 回调通知失败原因） |
+
+> 配置：8 数据位，无校验，1 停止位，无流控。
+
+#### `lora_sdk_serial_close`
+
+```c
+void lora_sdk_serial_close(lora_sdk_t *sdk);
+```
+
+关闭串口并退出 AT 模式。自动发送 `AT+EXIT` 退出 AT 模式后关闭串口句柄。
+
+#### `lora_sdk_serial_is_open`
+
+```c
+int lora_sdk_serial_is_open(lora_sdk_t *sdk);
+```
+
+查询串口是否已打开。返回值：非零 = 已打开，0 = 未打开。
+
+#### `lora_sdk_set_at_transport`
+
+```c
+void lora_sdk_set_at_transport(lora_sdk_t *sdk, int transport);
+```
+
+选择 `lora_sdk_send_at()` 使用的传输方式。
+
+| `transport` 值 | 宏 | 说明 |
+|----|------|------|
+| 0 | `LORA_SDK_AT_TRANSPORT_UDP` | UDP 网络传输（默认） |
+| 1 | `LORA_SDK_AT_TRANSPORT_SERIAL` | 串口直连传输 |
+
+#### `lora_sdk_get_at_transport`
+
+```c
+int lora_sdk_get_at_transport(lora_sdk_t *sdk);
+```
+
+获取当前 AT 传输方式。
+
+#### 串口 AT 模式协议
+
+SDK 在首次 `lora_sdk_send_at()` 调用时自动完成 AT 模式进入握手：
+
+```
+发送 "+++" → 等待 "a" 响应 → 发送 "a" → 等待 "+OK" 响应 → 进入 AT 模式
+```
+
+- 首次命令自动进入 AT 模式，后续命令复用已有 AT 模式
+- `lora_sdk_serial_close()` 退出 AT 模式并关闭串口
+- 每条 AT 命令超时 3 秒
+
+#### 使用示例
+
+```c
+/* 方式一：UDP 远程配置（默认） */
+lora_sdk_search_devices(sdk);       // 发现设备
+lora_sdk_send_at(sdk, "AT+VER?");   // 通过 UDP 发送 AT 指令
+
+/* 方式二：串口本地配置 */
+lora_sdk_serial_open(sdk, "COM3", 115200);           // 打开串口
+lora_sdk_set_at_transport(sdk, LORA_SDK_AT_TRANSPORT_SERIAL);  // 切换为串口
+lora_sdk_send_at(sdk, "AT+VER?");   // 通过串口发送 AT 指令（自动进入 AT 模式）
+lora_sdk_send_at(sdk, "AT+SPD?");   // 继续发送（复用 AT 模式）
+
+/* 切回 UDP */
+lora_sdk_set_at_transport(sdk, LORA_SDK_AT_TRANSPORT_UDP);
+lora_sdk_serial_close(sdk);         // 退出 AT 模式并关闭串口
+```
+
+> 注意：`lora_sdk_search_devices()` 和 `lora_sdk_get_net_params()` 仅支持 UDP，串口模式下不可用。
 
 ---
 
@@ -797,5 +896,5 @@ SDK 内部集成了以下库，客户无需额外获取：
 4. **重连**：断开后可直接再次调用 `lora_sdk_connect()`，无需重新初始化 SDK。
 5. **多实例**：支持创建多个 `lora_sdk_t` 实例连接不同网关。
 6. **DLL 线程安全**：DLL 版本在 `DllMain` 中初始化 Winsock，支持多进程加载。
-7. **搜索前置**：UDP 操作（`lora_sdk_get_net_params`、`lora_sdk_send_at`）需要先执行 `lora_sdk_search_devices()` 获取设备 MAC 地址。
+7. **搜索前置**：UDP 模式的 `lora_sdk_send_at()` 需要先执行 `lora_sdk_search_devices()` 获取设备 MAC 地址。串口模式无需搜索，直接 `lora_sdk_serial_open()` 后即可使用 `lora_sdk_send_at()`。`lora_sdk_search_devices()` 和 `lora_sdk_get_net_params()` 始终走 UDP，不受 AT 传输方式影响。
 8. **网卡枚举**：`lora_sdk_search_devices()` 自动枚举所有活跃非回环 IPv4 网卡并发送广播。
