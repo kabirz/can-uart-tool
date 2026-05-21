@@ -505,9 +505,15 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         SendMessageW(pData->hHistoryList, LVM_INSERTCOLUMNW, 2, (LPARAM)&lvc);
 
         lvc.pszText = L"数据";
-        lvc.cx = listW - 320;
-        if (lvc.cx < 100) lvc.cx = 100;
+        lvc.cx = 200;
         SendMessageW(pData->hHistoryList, LVM_INSERTCOLUMNW, 3, (LPARAM)&lvc);
+
+        RECT rcList0;
+        GetClientRect(pData->hHistoryList, &rcList0);
+        int cw0 = rcList0.right - rcList0.left;
+        int dw0 = cw0 - 320;
+        if (dw0 < 100) dw0 = 100;
+        SendMessageW(pData->hHistoryList, LVM_SETCOLUMNWIDTH, 3, dw0);
 
         return 0;
     }
@@ -992,8 +998,10 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         if (listH < 50) listH = 50;
         MoveWindow(pData->hHistoryList, listX, listY, listW, listH, TRUE);
 
-        /* Adjust data column width to stretch */
-        int dataColW = listW - 320;
+        RECT rcList;
+        GetClientRect(pData->hHistoryList, &rcList);
+        int clientW = rcList.right - rcList.left;
+        int dataColW = clientW - 320;
         if (dataColW < 100) dataColW = 100;
         SendMessageW(pData->hHistoryList, LVM_SETCOLUMNWIDTH, 3, dataColW);
 
