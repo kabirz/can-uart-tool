@@ -1,6 +1,6 @@
 # LoRa Gateway SDK 使用指南
 
-**版本**: 1.0.0
+**版本**: 1.1.0
 **许可证**: Apache-2.0
 **平台**: Windows (Winsock2)
 **语言**: C99
@@ -899,3 +899,34 @@ SDK 内部集成了以下库，客户无需额外获取：
 6. **DLL 线程安全**：DLL 版本在 `DllMain` 中初始化 Winsock，支持多进程加载。
 7. **搜索前置**：UDP 模式的 `lora_sdk_send_at()` 需要先执行 `lora_sdk_search_devices()` 获取设备 MAC 地址。串口模式无需搜索，直接 `lora_sdk_serial_open()` 后即可使用。`lora_sdk_search_devices()` 和 `lora_sdk_get_net_params()` 会根据当前传输方式自动选择 UDP 或串口 AT 指令实现。
 8. **网卡枚举**：`lora_sdk_search_devices()` 自动枚举所有活跃非回环 IPv4 网卡并发送广播。
+
+---
+
+## 更新日志
+
+### 1.1.0 — 串口 AT 传输支持
+
+**新增**
+- 串口 AT 命令传输 (`lora_sdk_serial.c`)：通过物理 COM 口直连网关进行 AT 配置
+  - 自动 AT 模式握手（`+++` → `a` → `+OK`），透明管理生命周期
+  - 设备信息查询：`AT+INMDL?` / `AT+VER?` / `AT+MAC?` → `on_device_found`
+  - 网络参数查询：`AT+WANN?` → `on_net_params`
+  - 与 UDP 模式共用 `lora_sdk_send_at()` / `on_at_response`，调用方无需区分
+- 传输方式选择：`lora_sdk_set_at_transport()` / `lora_sdk_get_at_transport()`
+- 公共 AT 帮助模块 (`lora_sdk_at.c`)：CRLF 格式化、查询检测、响应修剪、worker 线程封装
+- 数据类型宏 `LORA_DATA_HANDLER` / `LORA_DATA_TEST` / `LORA_DATA_RSSI`（与嵌入式 `lora.h` 一致）
+
+**改进**
+- `on_log` 新增 `LORA_SDK_LOG_SERIAL` 来源，回调签名增加 `source` 参数
+- `on_error` 增加 `source` 参数，支持按传输方式路由错误
+- 示例程序新增串口交互命令 `o`（打开）/ `x`（关闭）/ `t`（切换传输）
+- PC Tool 配置页新增传输方式选择组（UDP / 串口），基于 SetupAPI 枚举可用串口
+
+### 1.0.0 — 初始版本
+
+- TCP 数据帧收发（统一帧格式 + CRC16-CCITT）
+- UDP 设备发现、网络参数查询、AT 指令透传
+- RSSI 信号强度查询与响应（`lora_sdk_query_rssi`）
+- 扫描仪合并帧打包/解析（`lora_scanner_pack` / `lora_scanner_parse`）
+- 大端序字节序辅助函数（`lora_put_be16/32` / `lora_get_be16/32`）
+- 静态库 + DLL 双构建目标
