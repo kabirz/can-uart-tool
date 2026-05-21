@@ -685,9 +685,9 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
             typeStr = L"RSSI";
             wsprintfW(dataStr, L"RSSI请求");
 
-            /* Trigger SDK to send AT command for RSSI info */
+            /* Query gateway RSSI and send response back to this NID */
             if (pData->sdk) {
-                lora_sdk_send_at(pData->sdk, "AT+NINFO?\r\n");
+                lora_sdk_query_rssi(pData->sdk, msg->nid);
             }
             break;
         }

@@ -118,6 +118,13 @@ LORA_SDK_API void lora_sdk_send_at(lora_sdk_t *sdk, const char *at_cmd)
     sdk_udp_send_at(sdk, at_cmd);
 }
 
+LORA_SDK_API void lora_sdk_query_rssi(lora_sdk_t *sdk, uint32_t nid)
+{
+    if (!sdk) return;
+    sdk->pending_rssi_nid = nid;
+    sdk_udp_send_at(sdk, "AT+NINFO?\r\n");
+}
+
 LORA_SDK_API void lora_sdk_set_test_flag(lora_sdk_t *sdk, int flag)
 {
     if (!sdk) return;

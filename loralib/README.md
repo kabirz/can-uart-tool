@@ -105,7 +105,6 @@ static HANDLE g_netParamsEvent = NULL;
 
 static char g_gatewayIp[64] = "";
 static lora_sdk_t *g_sdk = NULL;
-static volatile uint32_t g_pendingRssiNid = 0;
 
 /* 连接状态回调 */
 static void on_conn_state(void *ud, enum lora_sdk_conn_state state)
@@ -151,42 +150,17 @@ static void on_frame(void *ud, uint32_t nid,
         lora_sdk_send_frame(g_sdk, nid, payload, len); /* echo back */
         break;
 
-    case 0x03: /* RSSI 请求 — 查询信号强度后回复 */
+    case 0x03: /* RSSI 请求 — SDK 内部查询信号强度后回复 */
         printf("[RSSI] NID=0x%08X\n", nid);
-        g_pendingRssiNid = nid;
-        lora_sdk_send_at(g_sdk, "AT+NINFO?");
+        lora_sdk_query_rssi(g_sdk, nid);
         break;
     }
 }
 
-/* AT 响应回调 — 解析 NINFO 并发送 RSSI 响应 */
+/* AT 响应回调 */
 static void on_at_response(void *ud, const char *resp)
 {
     printf("[AT响应] %s\n", resp);
-    if (g_pendingRssiNid != 0 && g_sdk) {
-        const char *p = strstr(resp, "+NINFO:");
-        if (p) {
-            int snr_val = 0, rssi_val = -120;
-            int field_idx = 0;
-            const char *cur = p + 7;
-            while (*cur && *cur != '\r' && *cur != '\n' && field_idx < 5) {
-                field_idx++;
-                const char *endp = cur;
-                while (*endp && *endp != ',' && *endp != '\r' && *endp != '\n')
-                    endp++;
-                int flen = (int)(endp - cur);
-                if (field_idx == 4 && flen > 0) snr_val = atoi(cur);
-                if (field_idx == 5 && flen > 0) rssi_val = atoi(cur);
-                if (*endp != ',') break;
-                cur = endp + 1;
-            }
-            uint8_t snr_raw  = (uint8_t)(int8_t)snr_val;
-            uint8_t rssi_raw = (uint8_t)(int8_t)rssi_val;
-            lora_sdk_send_rssi_response(g_sdk, g_pendingRssiNid,
-                                        snr_raw, rssi_raw, 0);
-            g_pendingRssiNid = 0;
-        }
-    }
 }
 
 /* 网络参数回调 — 自动保存网关 IP 用于 TCP 连接 */

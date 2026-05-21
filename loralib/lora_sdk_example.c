@@ -34,7 +34,6 @@ static volatile int g_connected = 0;
 
 static char g_gatewayIp[64] = "";
 static lora_sdk_t *g_sdk_for_echo = NULL;
-static volatile uint32_t g_pendingRssiNid = 0;
 
 /* ------------------------------------------------------------------ */
 /*  Callbacks                                                          */
@@ -116,8 +115,7 @@ static void on_frame(void *ud, uint32_t nid,
 
     case 0x03: {
         printf("[RSSI] NID=0x%08X, len=%u\n", nid, len);
-        g_pendingRssiNid = nid;
-        lora_sdk_send_at(g_sdk_for_echo, "AT+NINFO?");
+        lora_sdk_query_rssi(g_sdk_for_echo, nid);
         printf("  -> 已发送 AT+NINFO? 查询信号强度\n");
         break;
     }
@@ -146,35 +144,6 @@ static void on_at_response(void *ud, const char *resp)
 {
     (void)ud;
     printf("[AT响应] %s\n", resp);
-
-    if (g_pendingRssiNid != 0 && g_sdk_for_echo) {
-        const char *p = strstr(resp, "+NINFO:");
-        if (p) {
-            const char *info = p + 7;
-            int snr_val = 0, rssi_val = -120;
-            int field_idx = 0;
-            const char *cur = info;
-            while (*cur && *cur != '\r' && *cur != '\n' && field_idx < 5) {
-                field_idx++;
-                const char *endp = cur;
-                while (*endp && *endp != ',' && *endp != '\r' && *endp != '\n')
-                    endp++;
-                int flen = (int)(endp - cur);
-                if (field_idx == 4 && flen > 0) snr_val = atoi(cur);
-                if (field_idx == 5 && flen > 0) rssi_val = atoi(cur);
-                if (*endp != ',') break;
-                cur = endp + 1;
-            }
-
-            uint8_t snr_raw = (uint8_t)(int8_t)snr_val;
-            uint8_t rssi_raw = (uint8_t)(int8_t)rssi_val;
-            printf("  RSSI响应: SNR=%d, RSSI=%d -> NID=0x%08X\n",
-                   snr_val, rssi_val, g_pendingRssiNid);
-            lora_sdk_send_rssi_response(g_sdk_for_echo, g_pendingRssiNid,
-                                        snr_raw, rssi_raw, 0);
-            g_pendingRssiNid = 0;
-        }
-    }
 }
 
 static void on_net_params(void *ud, const char *ip,
