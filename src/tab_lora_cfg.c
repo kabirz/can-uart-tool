@@ -734,7 +734,7 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         /* ========== Group 2: Network Settings ========== */
         int grp2Y = grp1Y + grp1H + 6;
         int grp2W = pageW - 2 * margin;
-        int grp2H = 210;
+        int grp2H = 174;
         pData->hGrpNet = CreateWindowExW(0, L"BUTTON", L"网络设置",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             margin, grp2Y, grp2W, grp2H, hwnd, NULL, hInst, NULL);
@@ -813,34 +813,31 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
             ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
         cy += lineH;
 
-        /* Row 4: SOCKA mode + IP */
+        /* Row 4: SOCKA — mode + IP + remote port + local port + buttons */
         ox = cx;
-        CreateLabel(hwnd, hInst, -1, ox, cy + 4, 60, 20, L"SOCKA:", pData->hFont);
-        ox += 64;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 4, 72, 20, L"SOCKA:", pData->hFont);
+        ox += 76;
         pData->hComboSockaMode = CreateCombo(hwnd, hInst, IDC_CFG_SOCKA_MODE_COMBO,
-            ox, cy, 80, 200, pData->hFont);
+            ox, cy, 90, 200, pData->hFont);
         SendMessageW(pData->hComboSockaMode, CB_ADDSTRING, 0, (LPARAM)L"TCPC");
         SendMessageW(pData->hComboSockaMode, CB_ADDSTRING, 0, (LPARAM)L"TCPS");
         SendMessageW(pData->hComboSockaMode, CB_SETCURSEL, 0, 0);
-        ox += 86;
-        CreateLabel(hwnd, hInst, -1, ox, cy + 4, 60, 20, L"IP:", pData->hFont);
-        ox += 64;
+        ox += 96;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 4, 72, 20, L"IP:", pData->hFont);
+        ox += 76;
         pData->hEditSockaIp = CreateEdit(hwnd, hInst, IDC_CFG_SOCKA_IP_EDIT,
-            ox, cy, 180, 26, L"192.168.1.100", pData->hFontMono, 0);
-        cy += lineH;
-
-        /* Row 5: SOCKA remote port + local port + buttons */
-        ox = cx;
-        CreateLabel(hwnd, hInst, -1, ox, cy + 4, 84, 20, L"远程端口:", pData->hFont);
-        ox += 88;
+            ox, cy, 150, 26, L"192.168.1.100", pData->hFontMono, 0);
+        ox += 156;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 4, 88, 20, L"远程端口:", pData->hFont);
+        ox += 92;
         pData->hEditSockaRPort = CreateEdit(hwnd, hInst, IDC_CFG_SOCKA_RPORT_EDIT,
-            ox, cy, 80, 26, L"1883", pData->hFontMono, 0);
-        ox += 86;
-        CreateLabel(hwnd, hInst, -1, ox, cy + 4, 84, 20, L"本地端口:", pData->hFont);
-        ox += 88;
+            ox, cy, 70, 26, L"1883", pData->hFontMono, 0);
+        ox += 76;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 4, 88, 20, L"本地端口:", pData->hFont);
+        ox += 92;
         pData->hEditSockaLPort = CreateEdit(hwnd, hInst, IDC_CFG_SOCKA_LPORT_EDIT,
-            ox, cy, 80, 26, L"1234", pData->hFontMono, 0);
-        ox += 86;
+            ox, cy, 70, 26, L"1234", pData->hFontMono, 0);
+        ox += 76;
         pData->hBtnSockaSet = CreateBtn(hwnd, hInst, IDC_CFG_SOCKA_SET,
             ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
         ox += smallBtnW + 6;
@@ -858,18 +855,16 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         cx = margin + 14;
         cy = grp3Y + 26;
 
-        /* Row 1: NWMODE + TTMODE */
+        /* Row 1: NWMODE + 工作模式 */
         ox = cx;
-        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 96, 24, L"NWMODE:", pData->hFont);
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 96, 24, L"是否组网:", pData->hFont);
         ox += 100;
         pData->hComboNwmode = CreateCombo(hwnd, hInst, IDC_CFG_NWMODE_COMBO,
-            ox, cy, 130, 200, pData->hFont);
-        SendMessageW(pData->hComboNwmode, CB_ADDSTRING, 0,
-            (LPARAM)L"透传 (默认)");
-        SendMessageW(pData->hComboNwmode, CB_ADDSTRING, 0,
-            (LPARAM)L"组网");
+            ox, cy, 170, 200, pData->hFont);
+        SendMessageW(pData->hComboNwmode, CB_ADDSTRING, 0, (LPARAM)L"否");
+        SendMessageW(pData->hComboNwmode, CB_ADDSTRING, 0, (LPARAM)L"是");
         SendMessageW(pData->hComboNwmode, CB_SETCURSEL, 0, 0);
-        ox += 136;
+        ox += 176;
         pData->hBtnNwmodeSet = CreateBtn(hwnd, hInst, IDC_CFG_NWMODE_SET,
             ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
         ox += smallBtnW + 6;
@@ -877,16 +872,14 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
             ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
         ox += smallBtnW + 14;
 
-        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 96, 24, L"TTMODE:", pData->hFont);
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 96, 24, L"工作模式:", pData->hFont);
         ox += 100;
         pData->hComboTtmode = CreateCombo(hwnd, hInst, IDC_CFG_TTMODE_COMBO,
-            ox, cy, 130, 200, pData->hFont);
-        SendMessageW(pData->hComboTtmode, CB_ADDSTRING, 0,
-            (LPARAM)L"广播透传 (默认)");
-        SendMessageW(pData->hComboTtmode, CB_ADDSTRING, 0,
-            (LPARAM)L"指定节点");
+            ox, cy, 170, 200, pData->hFont);
+        SendMessageW(pData->hComboTtmode, CB_ADDSTRING, 0, (LPARAM)L"广播透传");
+        SendMessageW(pData->hComboTtmode, CB_ADDSTRING, 0, (LPARAM)L"指定节点");
         SendMessageW(pData->hComboTtmode, CB_SETCURSEL, 0, 0);
-        ox += 136;
+        ox += 176;
         pData->hBtnTtmodeSet = CreateBtn(hwnd, hInst, IDC_CFG_TTMODE_SET,
             ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
         ox += smallBtnW + 6;
@@ -894,26 +887,10 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
             ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
         cy += lineH;
 
-        /* Row 2: WMODE + UPWID */
+        /* Row 2: UPWID + 功率 */
         ox = cx;
-        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 96, 24, L"WMODE:", pData->hFont);
-        ox += 100;
-        pData->hComboWmode = CreateCombo(hwnd, hInst, IDC_CFG_WMODE_COMBO,
-            ox, cy, 130, 200, pData->hFont);
-        SendMessageW(pData->hComboWmode, CB_ADDSTRING, 0, (LPARAM)L"广播透传 (默认)");
-        SendMessageW(pData->hComboWmode, CB_ADDSTRING, 0, (LPARAM)L"指定节点");
-        SendMessageW(pData->hComboWmode, CB_ADDSTRING, 0, (LPARAM)L"主动上报");
-        SendMessageW(pData->hComboWmode, CB_SETCURSEL, 0, 0);
-        ox += 136;
-        pData->hBtnWmodeSet = CreateBtn(hwnd, hInst, IDC_CFG_WMODE_SET,
-            ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
-        ox += smallBtnW + 6;
-        pData->hBtnWmodeQuery = CreateBtn(hwnd, hInst, IDC_CFG_WMODE_QUERY,
-            ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
-        ox += smallBtnW + 14;
-
-        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 96, 24, L"UPWID:", pData->hFont);
-        ox += 100;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 100, 24, L"上行携带ID:", pData->hFont);
+        ox += 104;
         pData->hUpwidText = CreateStaticText(hwnd, hInst, IDC_CFG_UPWID_TEXT,
             ox, cy, 80, 22, L"-", pData->hFontMono);
         ox += 86;
@@ -925,29 +902,47 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         ox += smallBtnW + 6;
         pData->hBtnUpwidOff = CreateBtn(hwnd, hInst, IDC_CFG_UPWID_OFF,
             ox, cy, smallBtnW, smallBtnH, L"关闭", pData->hFont);
+        ox += smallBtnW + 14;
+
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 65, 24, L"功率:", pData->hFont);
+        ox += 69;
+        pData->hComboPwr = CreateCombo(hwnd, hInst, IDC_CFG_PWR_COMBO,
+            ox, cy, 78, 200, pData->hFont);
+        for (int p = 24; p <= 30; p++) {
+            wchar_t pbuf[8];
+            wsprintfW(pbuf, L"%d", p);
+            SendMessageW(pData->hComboPwr, CB_ADDSTRING, 0, (LPARAM)pbuf);
+        }
+        SendMessageW(pData->hComboPwr, CB_SETCURSEL, 6, 0); /* 30 */
+        ox += 84;
+        pData->hBtnPwrSet = CreateBtn(hwnd, hInst, IDC_CFG_PWR_SET,
+            ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
+        ox += smallBtnW + 6;
+        pData->hBtnPwrQuery = CreateBtn(hwnd, hInst, IDC_CFG_PWR_QUERY,
+            ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
         cy += lineH;
 
-        /* Row 3: CH + Freq + SPD + PWR */
+        /* Row 3: CH + Freq + SPD */
         ox = cx;
-        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 70, 24, L"通道:", pData->hFont);
-        ox += 74;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 65, 24, L"通道:", pData->hFont);
+        ox += 69;
         pData->hComboCh = CreateCombo(hwnd, hInst, IDC_CFG_CH_COMBO,
-            ox, cy, 70, 200, pData->hFont);
+            ox, cy, 78, 200, pData->hFont);
         SendMessageW(pData->hComboCh, CB_ADDSTRING, 0, (LPARAM)L"CH1");
         SendMessageW(pData->hComboCh, CB_ADDSTRING, 0, (LPARAM)L"CH2");
         SendMessageW(pData->hComboCh, CB_SETCURSEL, 0, 0);
-        ox += 76;
-        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 70, 24, L"频率:", pData->hFont);
-        ox += 74;
+        ox += 84;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 65, 24, L"频率:", pData->hFont);
+        ox += 69;
         pData->hComboFreq = CreateCombo(hwnd, hInst, IDC_CFG_CH_FREQ_COMBO,
-            ox, cy, 90, 200, pData->hFont);
+            ox, cy, 80, 200, pData->hFont);
         for (int f = 4100; f <= 5100; f += 100) {
             wchar_t fbuf[8];
             wsprintfW(fbuf, L"%d", f);
             SendMessageW(pData->hComboFreq, CB_ADDSTRING, 0, (LPARAM)fbuf);
         }
         SendMessageW(pData->hComboFreq, CB_SETCURSEL, 6, 0); /* 4700 */
-        ox += 96;
+        ox += 86;
         pData->hBtnChSet = CreateBtn(hwnd, hInst, IDC_CFG_CH_SET,
             ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
         ox += smallBtnW + 6;
@@ -955,39 +950,21 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
             ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
         ox += smallBtnW + 14;
 
-        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 70, 24, L"SPD:", pData->hFont);
-        ox += 74;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 65, 24, L"速度:", pData->hFont);
+        ox += 69;
         pData->hComboSpd = CreateCombo(hwnd, hInst, IDC_CFG_SPD_COMBO,
-            ox, cy, 60, 200, pData->hFont);
+            ox, cy, 75, 200, pData->hFont);
         for (int s = 4; s <= 11; s++) {
             wchar_t sbuf[8];
             wsprintfW(sbuf, L"%d", s);
             SendMessageW(pData->hComboSpd, CB_ADDSTRING, 0, (LPARAM)sbuf);
         }
         SendMessageW(pData->hComboSpd, CB_SETCURSEL, 3, 0); /* 7 */
-        ox += 66;
+        ox += 81;
         pData->hBtnSpdSet = CreateBtn(hwnd, hInst, IDC_CFG_SPD_SET,
             ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
         ox += smallBtnW + 6;
         pData->hBtnSpdQuery = CreateBtn(hwnd, hInst, IDC_CFG_SPD_QUERY,
-            ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
-        ox += smallBtnW + 14;
-
-        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 70, 24, L"PWR:", pData->hFont);
-        ox += 74;
-        pData->hComboPwr = CreateCombo(hwnd, hInst, IDC_CFG_PWR_COMBO,
-            ox, cy, 60, 200, pData->hFont);
-        for (int p = 24; p <= 30; p++) {
-            wchar_t pbuf[8];
-            wsprintfW(pbuf, L"%d", p);
-            SendMessageW(pData->hComboPwr, CB_ADDSTRING, 0, (LPARAM)pbuf);
-        }
-        SendMessageW(pData->hComboPwr, CB_SETCURSEL, 6, 0); /* 30 */
-        ox += 66;
-        pData->hBtnPwrSet = CreateBtn(hwnd, hInst, IDC_CFG_PWR_SET,
-            ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
-        ox += smallBtnW + 6;
-        pData->hBtnPwrQuery = CreateBtn(hwnd, hInst, IDC_CFG_PWR_QUERY,
             ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
 
         /* ========== Group 4: AT Command ========== */
@@ -1192,29 +1169,33 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
             SendAtCmd(pData, "AT+NWMODE?");
             return 0;
 
+        /* NWMODE combo change → update 工作模式 options */
+        case IDC_CFG_NWMODE_COMBO:
+            if (HIWORD(wParam) == CBN_SELCHANGE) {
+                int isMesh = (int)SendMessageW(pData->hComboNwmode, CB_GETCURSEL, 0, 0);
+                SendMessageW(pData->hComboTtmode, CB_RESETCONTENT, 0, 0);
+                SendMessageW(pData->hComboTtmode, CB_ADDSTRING, 0, (LPARAM)L"广播透传");
+                SendMessageW(pData->hComboTtmode, CB_ADDSTRING, 0, (LPARAM)L"指定节点");
+                if (isMesh)
+                    SendMessageW(pData->hComboTtmode, CB_ADDSTRING, 0, (LPARAM)L"主动上报");
+                SendMessageW(pData->hComboTtmode, CB_SETCURSEL, 0, 0);
+            }
+            return 0;
+
         case IDC_CFG_TTMODE_SET: {
+            int isMesh = (int)SendMessageW(pData->hComboNwmode, CB_GETCURSEL, 0, 0);
             int sel = (int)SendMessageW(pData->hComboTtmode, CB_GETCURSEL, 0, 0);
             char cmd[32];
-            snprintf(cmd, sizeof(cmd), "AT+TTMODE=%d", sel);
+            snprintf(cmd, sizeof(cmd), "AT+%s=%d", isMesh ? "WMODE" : "TTMODE", sel);
             SendAtCmd(pData, cmd);
             return 0;
         }
 
-        case IDC_CFG_TTMODE_QUERY:
-            SendAtCmd(pData, "AT+TTMODE?");
-            return 0;
-
-        case IDC_CFG_WMODE_SET: {
-            int sel = (int)SendMessageW(pData->hComboWmode, CB_GETCURSEL, 0, 0);
-            char cmd[32];
-            snprintf(cmd, sizeof(cmd), "AT+WMODE=%d", sel);
-            SendAtCmd(pData, cmd);
+        case IDC_CFG_TTMODE_QUERY: {
+            int isMesh = (int)SendMessageW(pData->hComboNwmode, CB_GETCURSEL, 0, 0);
+            SendAtCmd(pData, isMesh ? "AT+WMODE?" : "AT+TTMODE?");
             return 0;
         }
-
-        case IDC_CFG_WMODE_QUERY:
-            SendAtCmd(pData, "AT+WMODE?");
-            return 0;
 
         case IDC_CFG_UPWID_QUERY:
             SendAtCmd(pData, "AT+UPWID?");
@@ -1412,7 +1393,7 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         int margin = 14;
         int grp0H = 62;    /* Transport */
         int grp1H = 94;
-        int grp2H = 210;   /* Network + SOCKA */
+        int grp2H = 174;   /* Network + SOCKA */
         int grp3H = 130;
         int grp4H = 56;    /* AT command */
 
