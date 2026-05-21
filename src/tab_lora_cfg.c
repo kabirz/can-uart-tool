@@ -495,10 +495,6 @@ static void UpdateTransportUI(TAB_LORA_CFG *pData)
         SetWindowTextW(pData->hSerialStatus, L"未连接");
     }
 
-    /* UDP-only buttons: disabled when serial mode */
-    EnableWindow(pData->hBtnSearch, !isSerial);
-    EnableWindow(pData->hBtnGetNet, !isSerial);
-
     /* Update SDK transport */
     if (pData->sdk) {
         if (isSerial)
@@ -638,43 +634,51 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         ox += 156;
 
         /* COM port */
-        pData->hLblComPort = CreateLabel(hwnd, hInst, -1, ox, cy + 2, 72, 24,
+        pData->hLblComPort = CreateLabel(hwnd, hInst, -1, ox, cy + 2, 76, 24,
                                           L"COM口:", pData->hFont);
-        ox += 76;
+        ox += 80;
         pData->hComboComPort = CreateCombo(hwnd, hInst, IDC_CFG_COMPORT_COMBO,
-            ox, cy, 80, 200, pData->hFont);
+            ox, cy, 110, 200, pData->hFont);
         EnumerateComPorts(pData->hComboComPort);
-        ox += 86;
+        SendMessageW(pData->hComboComPort, CB_SETDROPPEDWIDTH, 140, 0);
+        ox += 116;
         pData->hBtnSerialRefresh = CreateBtn(hwnd, hInst, IDC_CFG_SERIAL_REFRESH_BTN,
             ox, cy, 50, btnH, L"刷新", pData->hFont);
         ox += 62;
 
         /* Baud rate */
-        pData->hLblBaud = CreateLabel(hwnd, hInst, -1, ox, cy + 2, 72, 24,
+        pData->hLblBaud = CreateLabel(hwnd, hInst, -1, ox, cy + 2, 80, 24,
                                        L"波特率:", pData->hFont);
-        ox += 76;
+        ox += 84;
         pData->hComboBaud = CreateCombo(hwnd, hInst, IDC_CFG_BAUD_COMBO,
-            ox, cy, 90, 200, pData->hFont);
+            ox, cy, 120, 200, pData->hFont);
         {
-            wchar_t baudStrs[][8] = { L"9600", L"19200", L"38400", L"57600", L"115200" };
-            int baudVals[] = { 9600, 19200, 38400, 57600, 115200 };
-            for (int i = 0; i < 5; i++) {
+            wchar_t baudStrs[][8] = {
+                L"9600", L"19200", L"38400", L"57600",
+                L"115200", L"230400", L"460800", L"921600"
+            };
+            int baudVals[] = {
+                9600, 19200, 38400, 57600,
+                115200, 230400, 460800, 921600
+            };
+            for (int i = 0; i < 8; i++) {
                 int idx = (int)SendMessageW(pData->hComboBaud, CB_ADDSTRING,
                                              0, (LPARAM)baudStrs[i]);
                 SendMessageW(pData->hComboBaud, CB_SETITEMDATA, idx, (LPARAM)baudVals[i]);
             }
         }
         SendMessageW(pData->hComboBaud, CB_SETCURSEL, 4, 0); /* default 115200 */
-        ox += 102;
+        SendMessageW(pData->hComboBaud, CB_SETDROPPEDWIDTH, 160, 0);
+        ox += 132;
 
         /* Open/Close button */
         pData->hBtnSerialOpen = CreateBtn(hwnd, hInst, IDC_CFG_SERIAL_OPEN_BTN,
-            ox, cy, 90, btnH, L"打开串口", pData->hFont);
-        ox += 100;
+            ox, cy, 82, btnH, L"打开串口", pData->hFont);
+        ox += 92;
 
         /* Status */
         pData->hSerialStatus = CreateLabel(hwnd, hInst, IDC_CFG_SERIAL_STATUS,
-            ox, cy + 2, 100, 24, L"未连接", pData->hFont);
+            ox, cy + 2, 80, 24, L"未连接", pData->hFont);
 
         /* Apply initial transport UI state */
         UpdateTransportUI(pData);
