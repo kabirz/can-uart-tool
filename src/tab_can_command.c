@@ -80,9 +80,9 @@ typedef struct {
     HWND hComboProt;
     HWND hComboMode;
     HWND hComboSpd1;
-    HWND hEditCh1;
+    HWND hComboFreq1;
     HWND hComboSpd2;
-    HWND hEditCh2;
+    HWND hComboFreq2;
     HWND hComboPnum;
     HWND hEditNid;
     HWND hEditGwid;
@@ -286,9 +286,9 @@ static void UpdateLoraControlStates(TAB_CMD_DATA *pData)
     EnableWindow(pData->hComboProt,   loraReady);
     EnableWindow(pData->hComboMode,   loraReady);
     EnableWindow(pData->hComboSpd1,   loraReady);
-    EnableWindow(pData->hEditCh1,     loraReady);
+    EnableWindow(pData->hComboFreq1,  loraReady);
     EnableWindow(pData->hComboSpd2,   loraReady);
-    EnableWindow(pData->hEditCh2,     loraReady);
+    EnableWindow(pData->hComboFreq2,  loraReady);
     EnableWindow(pData->hComboPnum,   loraReady);
     EnableWindow(pData->hEditNid,     loraReady);
     EnableWindow(pData->hEditGwid,    loraReady);
@@ -490,7 +490,7 @@ static void SendLoraCommand(TAB_CMD_DATA *pData, uint8_t cmd)
     case LORA_CMD_SET_CH1: {
         int spd_idx = (int)SendMessageW(pData->hComboSpd1, CB_GETCURSEL, 0, 0);
         data[1] = (uint8_t)(spd_idx + 4);
-        GetWindowTextW(pData->hEditCh1, buf, 32);
+        GetWindowTextW(pData->hComboFreq1, buf, 32);
         uint16_t ch = (uint16_t)wcstoul(buf, NULL, 10);
         PutBE16(ch, &data[2]);
         dlc = 4;
@@ -499,7 +499,7 @@ static void SendLoraCommand(TAB_CMD_DATA *pData, uint8_t cmd)
     case LORA_CMD_SET_CH2: {
         int spd_idx = (int)SendMessageW(pData->hComboSpd2, CB_GETCURSEL, 0, 0);
         data[1] = (uint8_t)(spd_idx + 4);
-        GetWindowTextW(pData->hEditCh2, buf, 32);
+        GetWindowTextW(pData->hComboFreq2, buf, 32);
         uint16_t ch = (uint16_t)wcstoul(buf, NULL, 10);
         PutBE16(ch, &data[2]);
         dlc = 4;
@@ -745,11 +745,11 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         cy += rowGap;
 
         /* CH1 */
-        CreateLabel(hwnd, hInst, -1, cx, cy + 1, labelW, 24, L"CH1:", pData->hFont);
-        CreateLabel(hwnd, hInst, -1, cx + labelW + 4, cy + 1, 36, 24, L"SPD:", pData->hFont);
+        CreateLabel(hwnd, hInst, -1, cx, cy + 1, labelW + 16, 24, L"通道1:", pData->hFont);
+        CreateLabel(hwnd, hInst, -1, cx + labelW + 20, cy + 1, 40, 24, L"速度:", pData->hFont);
         pData->hComboSpd1 = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-            cx + labelW + 42, cy, 56, 140, hwnd, (HMENU)IDC_COMBO_LORA_SPD1, hInst, NULL);
+            cx + labelW + 62, cy, 56, 140, hwnd, (HMENU)IDC_COMBO_LORA_SPD1, hInst, NULL);
         SendMessageW(pData->hComboSpd1, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
         for (int s = 4; s <= 11; s++) {
             wchar_t sbuf[8]; wsprintfW(sbuf, L"%d", s);
@@ -757,11 +757,16 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         }
         SendMessageW(pData->hComboSpd1, CB_SETCURSEL, 3, 0);
 
-        CreateLabel(hwnd, hInst, -1, cx + labelW + 104, cy + 1, 24, 24, L"CH:", pData->hFont);
-        pData->hEditCh1 = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"4800",
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-            cx + labelW + 130, cy, 64, 24, hwnd, (HMENU)IDC_EDIT_LORA_CH1, hInst, NULL);
-        SendMessageW(pData->hEditCh1, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
+        CreateLabel(hwnd, hInst, -1, cx + labelW + 122, cy + 1, 40, 24, L"频率:", pData->hFont);
+        pData->hComboFreq1 = CreateWindowExW(0, L"COMBOBOX", L"",
+            WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
+            cx + labelW + 164, cy, 80, 200, hwnd, (HMENU)IDC_COMBO_LORA_FREQ1, hInst, NULL);
+        SendMessageW(pData->hComboFreq1, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+        for (int f = 4100; f <= 5100; f += 100) {
+            wchar_t fbuf[8]; wsprintfW(fbuf, L"%d", f);
+            SendMessageW(pData->hComboFreq1, CB_ADDSTRING, 0, (LPARAM)fbuf);
+        }
+        SendMessageW(pData->hComboFreq1, CB_SETCURSEL, 7, 0); /* 4800 */
 
         pData->hBtnQueryCh1 = CreateWindowExW(0, L"BUTTON", L"查询",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, btnX, cy, btnW, 22,
@@ -776,11 +781,11 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         cy += rowGap;
 
         /* CH2 */
-        CreateLabel(hwnd, hInst, -1, cx, cy + 1, labelW, 24, L"CH2:", pData->hFont);
-        CreateLabel(hwnd, hInst, -1, cx + labelW + 4, cy + 1, 36, 24, L"SPD:", pData->hFont);
+        CreateLabel(hwnd, hInst, -1, cx, cy + 1, labelW + 16, 24, L"通道2:", pData->hFont);
+        CreateLabel(hwnd, hInst, -1, cx + labelW + 20, cy + 1, 40, 24, L"速度:", pData->hFont);
         pData->hComboSpd2 = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-            cx + labelW + 42, cy, 56, 140, hwnd, (HMENU)IDC_COMBO_LORA_SPD2, hInst, NULL);
+            cx + labelW + 62, cy, 56, 140, hwnd, (HMENU)IDC_COMBO_LORA_SPD2, hInst, NULL);
         SendMessageW(pData->hComboSpd2, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
         for (int s = 4; s <= 11; s++) {
             wchar_t sbuf[8]; wsprintfW(sbuf, L"%d", s);
@@ -788,11 +793,16 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         }
         SendMessageW(pData->hComboSpd2, CB_SETCURSEL, 3, 0);
 
-        CreateLabel(hwnd, hInst, -1, cx + labelW + 104, cy + 1, 24, 24, L"CH:", pData->hFont);
-        pData->hEditCh2 = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"4800",
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-            cx + labelW + 130, cy, 64, 24, hwnd, (HMENU)IDC_EDIT_LORA_CH2, hInst, NULL);
-        SendMessageW(pData->hEditCh2, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
+        CreateLabel(hwnd, hInst, -1, cx + labelW + 122, cy + 1, 40, 24, L"频率:", pData->hFont);
+        pData->hComboFreq2 = CreateWindowExW(0, L"COMBOBOX", L"",
+            WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
+            cx + labelW + 164, cy, 80, 200, hwnd, (HMENU)IDC_COMBO_LORA_FREQ2, hInst, NULL);
+        SendMessageW(pData->hComboFreq2, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+        for (int f = 4100; f <= 5100; f += 100) {
+            wchar_t fbuf[8]; wsprintfW(fbuf, L"%d", f);
+            SendMessageW(pData->hComboFreq2, CB_ADDSTRING, 0, (LPARAM)fbuf);
+        }
+        SendMessageW(pData->hComboFreq2, CB_SETCURSEL, 7, 0); /* 4800 */
 
         pData->hBtnQueryCh2 = CreateWindowExW(0, L"BUTTON", L"查询",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, btnX, cy, btnW, 22,
@@ -1091,9 +1101,9 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
                         wsprintfW(status, L"CH1: spd=%d ch=%d", spd, ch);
                         if (spd >= 4 && spd <= 11)
                             SendMessageW(pData->hComboSpd1, CB_SETCURSEL, spd - 4, 0);
-                        wchar_t chbuf[16];
-                        wsprintfW(chbuf, L"%d", ch);
-                        SetWindowTextW(pData->hEditCh1, chbuf);
+                        int freqSel = (ch - 4100) / 100;
+                        if (freqSel >= 0 && freqSel <= 10)
+                            SendMessageW(pData->hComboFreq1, CB_SETCURSEL, freqSel, 0);
                     }
                     break;
 
@@ -1105,9 +1115,9 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
                         wsprintfW(status, L"CH2: spd=%d ch=%d", spd, ch);
                         if (spd >= 4 && spd <= 11)
                             SendMessageW(pData->hComboSpd2, CB_SETCURSEL, spd - 4, 0);
-                        wchar_t chbuf[16];
-                        wsprintfW(chbuf, L"%d", ch);
-                        SetWindowTextW(pData->hEditCh2, chbuf);
+                        int freqSel = (ch - 4100) / 100;
+                        if (freqSel >= 0 && freqSel <= 10)
+                            SendMessageW(pData->hComboFreq2, CB_SETCURSEL, freqSel, 0);
                     }
                     break;
 

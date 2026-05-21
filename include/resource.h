@@ -55,9 +55,9 @@
 #define IDC_EDIT_LORA_PROT              1220
 #define IDC_EDIT_LORA_MODE              1221
 #define IDC_COMBO_LORA_SPD1             1222
-#define IDC_EDIT_LORA_CH1               1223
+#define IDC_COMBO_LORA_FREQ1            1223
 #define IDC_COMBO_LORA_SPD2             1224
-#define IDC_EDIT_LORA_CH2               1225
+#define IDC_COMBO_LORA_FREQ2            1225
 #define IDC_COMBO_LORA_PNUM             1226
 #define IDC_EDIT_LORA_NID               1227
 #define IDC_EDIT_LORA_GWID              1228
