@@ -296,7 +296,7 @@ void sdk_tcp_send_rssi(lora_sdk_t *sdk, uint32_t nid,
 {
     if (sdk->tcp_sock == INVALID_SOCKET) return;
 
-    uint8_t payload[4] = { 0x03, snr, rssi, test_flag };
+    uint8_t payload[4] = { LORA_DATA_RSSI, snr, rssi, test_flag };
     sdk_tcp_send_frame(sdk, nid, payload, 3);
 
     char desc[64];

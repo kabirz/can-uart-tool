@@ -74,7 +74,7 @@ static void on_frame(void *ud, uint32_t nid,
 
     switch (type) {
 
-    case 0x01: {
+    case LORA_DATA_HANDLER: {
         printf("[手柄] NID=0x%08X, len=%u\n", nid, len);
 
         if (body_len == 8 &&
@@ -89,7 +89,7 @@ static void on_frame(void *ud, uint32_t nid,
         break;
     }
 
-    case 0x02: {
+    case LORA_DATA_TEST: {
         printf("[测试] NID=0x%08X, len=%u\n", nid, len);
 
         if (body_len >= 6) {
@@ -114,7 +114,7 @@ static void on_frame(void *ud, uint32_t nid,
         break;
     }
 
-    case 0x03: {
+    case LORA_DATA_RSSI: {
         printf("[RSSI] NID=0x%08X, len=%u\n", nid, len);
         lora_sdk_query_rssi(g_sdk_for_echo, nid);
         printf("  -> 已发送 AT+NINFO? 查询信号强度\n");
@@ -217,7 +217,7 @@ static void print_help(void)
 static void do_send_test_frame(lora_sdk_t *sdk)
 {
     uint8_t data[] = {
-        0x02,
+        LORA_DATA_TEST,
         0x00, 0x01,
         0x00, 0x00, 0x00, 0x00,
     };

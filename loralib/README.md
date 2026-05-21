@@ -131,7 +131,7 @@ static void on_frame(void *ud, uint32_t nid,
     uint16_t body_len = len - 1;
 
     switch (type) {
-    case 0x01: /* 手柄遥测帧 */
+    case LORA_DATA_HANDLER: /* 手柄遥测帧 */
         if (body_len == 8 &&
             body[5] == 0xFF && body[6] == 0xFF && body[7] == 0xFF) {
             int16_t x = (int16_t)((uint16_t)body[0] << 8 | body[1]);
@@ -149,12 +149,12 @@ static void on_frame(void *ud, uint32_t nid,
         }
         break;
 
-    case 0x02: /* 测试帧 — 回显 */
+    case LORA_DATA_TEST: /* 测试帧 — 回显 */
         printf("[测试] NID=0x%08X, len=%u\n", nid, len);
         lora_sdk_send_frame(g_sdk, nid, payload, len); /* echo back */
         break;
 
-    case 0x03: /* RSSI 请求 — SDK 内部查询信号强度后回复 */
+    case LORA_DATA_RSSI: /* RSSI 请求 — SDK 内部查询信号强度后回复 */
         printf("[RSSI] NID=0x%08X\n", nid);
         lora_sdk_query_rssi(g_sdk, nid);
         break;
@@ -315,7 +315,7 @@ SDK 实例不透明句柄，由 `lora_sdk_init()` 创建，`lora_sdk_cleanup()` 
 
 ```
 偏移  长度  字段        说明
-[0]   1    type        0x01 (LORA_DATA_HANDLER)
+[0]   1    type        LORA_DATA_HANDLER
 [1]   1    flags       有效性位掩码
 [2]   2    overbreak   int16_t BE (超欠挖)
 [4]   4    laser       uint32_t BE (激光测距)
@@ -362,7 +362,7 @@ typedef struct {
 | 回调 | 触发时机 | 参数说明 |
 |------|---------|---------|
 | `on_conn_state` | TCP 连接状态变化 | `state`: 新状态 |
-| `on_frame` | 收到有效数据帧（payload 非空） | `nid`: 节点 ID；`payload[0]`: 数据类型（0x01=HANDLER, 0x02=TEST, 0x03=RSSI）；`payload` 仅在回调期间有效 |
+| `on_frame` | 收到有效数据帧（payload 非空） | `nid`: 节点 ID；`payload[0]`: 数据类型（`LORA_DATA_HANDLER`/`TEST`/`RSSI`）；`payload` 仅在回调期间有效 |
 | `on_device_found` | UDP 搜索发现设备 | `mac`: MAC 地址；`device_name`: 设备名称；`sw_version`: 固件版本；`from_ip`: 设备 IP |
 | `on_at_response` | AT 指令响应 | `at_response`: 原始响应文本 |
 | `on_net_params` | 网络参数查询结果 | `ip`/`mask`/`gateway`: 网络配置 |
@@ -470,7 +470,7 @@ void lora_sdk_send_rssi_response(lora_sdk_t *sdk, uint32_t nid,
                                   uint8_t test_flag);
 ```
 
-发送 RSSI 信号强度响应帧（payload 类型 0x03）。
+发送 RSSI 信号强度响应帧（payload 类型 `LORA_DATA_RSSI`）。
 
 | 参数 | 说明 |
 |------|------|
@@ -723,14 +723,14 @@ Data 首字节为类型标识：
 
 | 类型 | 值 | 方向 | Data 内容 | 说明 |
 |------|----|------|----------|------|
-| HANDLER | 0x01 | 双向 | 详见下方 | 遥测/扫描仪数据 |
-| TEST | 0x02 | 双向 | 测试帧内容 | 测试模式数据 |
-| RSSI | 0x03 | 网关→设备 | `[0x03][SNR 1B][RSSI 1B][test_flag 1B]` | 信号强度响应 |
+| HANDLER | `LORA_DATA_HANDLER` | 双向 | 详见下方 | 遥测/扫描仪数据 |
+| TEST | `LORA_DATA_TEST` | 双向 | 测试帧内容 | 测试模式数据 |
+| RSSI | `LORA_DATA_RSSI` | 网关→设备 | `[LORA_DATA_RSSI][SNR 1B][RSSI 1B]` | 信号强度响应 |
 
 ### HANDLER 帧格式（扫描仪合并帧，Data 20 字节）
 
 ```
-[0x01][flags 1B][overbreak 2B BE][laser 4B BE][coord_x 4B BE][coord_y 4B BE][coord_z 4B BE]
+[LORA_DATA_HANDLER][flags 1B][overbreak 2B BE][laser 4B BE][coord_x 4B BE][coord_y 4B BE][coord_z 4B BE]
 ```
 
 ### ACK 帧

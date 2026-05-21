@@ -48,7 +48,7 @@ enum lora_sdk_conn_state {
  * Scanner data (merged frame, 20-byte payload)
  *
  * Merged frame payload layout (Data field of unified frame):
- *   [0]    type       0x01 (LORA_DATA_HANDLER)
+ *   [0]    type       LORA_DATA_HANDLER
  *   [1]    flags      validity bitmask
  *   [2-3]  overbreak  int16_t BE
  *   [4-7]  laser      uint32_t BE
@@ -63,6 +63,11 @@ enum lora_sdk_conn_state {
 #define LORA_SCANNER_F_COORD_XY   0x08
 
 #define LORA_SCANNER_FRAME_SIZE   20
+
+/* Data type identifiers (payload[0]) — 与嵌入式端 lora.h lora_data_type 一致 */
+#define LORA_DATA_HANDLER 0x01
+#define LORA_DATA_TEST    0x02
+#define LORA_DATA_RSSI    0x03
 
 typedef struct {
     uint8_t overbreak_valid : 1;
@@ -110,7 +115,7 @@ static inline uint32_t lora_get_be32(const uint8_t *buf)
 static inline int lora_scanner_parse(const uint8_t *payload, uint16_t len,
                                      lora_scanner_data_t *out)
 {
-    if (len < LORA_SCANNER_FRAME_SIZE || payload[0] != 0x01) return -1;
+    if (len < LORA_SCANNER_FRAME_SIZE || payload[0] != LORA_DATA_HANDLER) return -1;
     uint8_t flags = payload[1];
     out->overbreak_valid = (flags >> 0) & 1;
     out->laser_valid     = (flags >> 1) & 1;
@@ -131,7 +136,7 @@ static inline int lora_scanner_pack(uint8_t *buf, size_t size,
                                     const lora_scanner_data_t *s)
 {
     if (size < LORA_SCANNER_FRAME_SIZE) return -1;
-    buf[0] = 0x01; /* LORA_DATA_HANDLER */
+    buf[0] = LORA_DATA_HANDLER;
     buf[1] = (s->overbreak_valid << 0) | (s->laser_valid << 1) |
              (s->coord_z_valid << 2)   | (s->coord_xy_valid << 3);
     lora_put_be16(buf + 2, (uint16_t)s->overbreak);
@@ -169,7 +174,7 @@ typedef struct {
     void (*on_conn_state)(void *ud, enum lora_sdk_conn_state state);
 
     /* Parsed frame received. 'payload' includes the type byte.
-     * payload[0] is the data type (0x01=HANDLER, 0x02=TEST, 0x03=RSSI).
+     * payload[0] is the data type (LORA_DATA_HANDLER/TEST/RSSI).
      * Valid only during the callback. */
     void (*on_frame)(void *ud, uint32_t nid,
                      const uint8_t *payload, uint16_t payload_len);
