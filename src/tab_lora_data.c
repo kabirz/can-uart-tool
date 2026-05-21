@@ -65,8 +65,6 @@ typedef struct {
     HWND hEditIp;
     HWND hEditPort;
     HWND hBtnConnect;
-    HWND hBtnDisconnect;
-    HWND hStatusText;
     HWND hNidText;
     HWND hTestCheck;
 
@@ -292,7 +290,7 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         cx = grp1X + 14;
         cy = grp1Y + 26;
 
-        /* Row 1: IP + Port + Connect/Disconnect + Status */
+        /* Row 1: IP + Port + Connect button (status shown on button text) */
         CreateLabel(hwnd, hInst, -1, cx, cy + 3, 26, 22, L"IP:", pData->hFont);
         pData->hEditIp = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT",
             L"192.168.2.100",
@@ -311,24 +309,9 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         ox += 122;
         pData->hBtnConnect = CreateWindowExW(0, L"BUTTON", L"连接",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            ox, cy, 80, 26,
+            ox, cy, 90, 26,
             hwnd, (HMENU)IDC_LORA_CONNECT_BTN, hInst, NULL);
         SendMessageW(pData->hBtnConnect, WM_SETFONT, (WPARAM)pData->hFontBold, TRUE);
-
-        ox += 86;
-        pData->hBtnDisconnect = CreateWindowExW(0, L"BUTTON", L"断开",
-            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            ox, cy, 80, 26,
-            hwnd, (HMENU)IDC_LORA_DISCONNECT_BTN, hInst, NULL);
-        SendMessageW(pData->hBtnDisconnect, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
-        EnableWindow(pData->hBtnDisconnect, FALSE);
-
-        ox += 86;
-        pData->hStatusText = CreateWindowExW(0, L"STATIC", L"已断开",
-            WS_CHILD | WS_VISIBLE | SS_LEFT,
-            ox, cy + 3, 160, 22,
-            hwnd, (HMENU)IDC_LORA_STATUS_TEXT, hInst, NULL);
-        SendMessageW(pData->hStatusText, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
         /* Row 2: NID + Test mode */
         cy += lineH;
@@ -522,19 +505,16 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         enum lora_sdk_conn_state state = (enum lora_sdk_conn_state)wParam;
         switch (state) {
         case LORA_SDK_CONN_DISCONNECTED:
-            SetWindowTextW(pData->hStatusText, L"已断开");
+            SetWindowTextW(pData->hBtnConnect, L"连接");
             EnableWindow(pData->hBtnConnect, TRUE);
-            EnableWindow(pData->hBtnDisconnect, FALSE);
             break;
         case LORA_SDK_CONN_CONNECTING:
-            SetWindowTextW(pData->hStatusText, L"连接中...");
+            SetWindowTextW(pData->hBtnConnect, L"连接中");
             EnableWindow(pData->hBtnConnect, FALSE);
-            EnableWindow(pData->hBtnDisconnect, FALSE);
             break;
         case LORA_SDK_CONN_CONNECTED:
-            SetWindowTextW(pData->hStatusText, L"已连接");
-            EnableWindow(pData->hBtnConnect, FALSE);
-            EnableWindow(pData->hBtnDisconnect, TRUE);
+            SetWindowTextW(pData->hBtnConnect, L"断开");
+            EnableWindow(pData->hBtnConnect, TRUE);
             break;
         }
         return 0;
@@ -807,24 +787,26 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         case IDC_LORA_CONNECT_BTN: {
             if (!pData->sdk) return 0;
 
-            wchar_t ipBuf[64];
-            GetWindowTextW(pData->hEditIp, ipBuf, 64);
+            wchar_t btnText[16] = {0};
+            GetWindowTextW(pData->hBtnConnect, btnText, 16);
 
-            wchar_t portBuf[16];
-            GetWindowTextW(pData->hEditPort, portBuf, 16);
-            int port = (int)wcstol(portBuf, NULL, 10);
+            if (wcsstr(btnText, L"连接") && !wcsstr(btnText, L"中")) {
+                /* 执行连接 */
+                wchar_t ipBuf[64];
+                GetWindowTextW(pData->hEditIp, ipBuf, 64);
 
-            /* Convert wide IP to UTF-8 for SDK */
-            char ipA[64] = {0};
-            WideCharToMultiByte(CP_UTF8, 0, ipBuf, -1, ipA, sizeof(ipA), NULL, NULL);
+                wchar_t portBuf[16];
+                GetWindowTextW(pData->hEditPort, portBuf, 16);
+                int port = (int)wcstol(portBuf, NULL, 10);
 
-            lora_sdk_connect(pData->sdk, ipA, port);
-            return 0;
-        }
+                char ipA[64] = {0};
+                WideCharToMultiByte(CP_UTF8, 0, ipBuf, -1, ipA, sizeof(ipA), NULL, NULL);
 
-        case IDC_LORA_DISCONNECT_BTN: {
-            if (pData->sdk)
+                lora_sdk_connect(pData->sdk, ipA, port);
+            } else {
+                /* 执行断开 */
                 lora_sdk_disconnect(pData->sdk);
+            }
             return 0;
         }
 

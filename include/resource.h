@@ -78,8 +78,6 @@
 #define IDC_LORA_IP_EDIT                1301
 #define IDC_LORA_PORT_EDIT              1302
 #define IDC_LORA_CONNECT_BTN            1303
-#define IDC_LORA_DISCONNECT_BTN         1304
-#define IDC_LORA_STATUS_TEXT            1305
 #define IDC_LORA_NID_TEXT               1306
 #define IDC_LORA_TEST_CHECK             1307
 #define IDC_LORA_X_TEXT                 1308
