@@ -61,6 +61,7 @@ typedef struct {
     /* Child control handles (set during WM_CREATE) */
     HWND hBtnCan;
     HWND hBtnUart;
+    HWND hLabelAdapter;
     HWND hComboAdapter;
     HWND hComboChannel;
     HWND hComboBaudrate;
@@ -214,12 +215,14 @@ static void GetDeviceList(TAB_UPGRADE_DATA *pData)
 static void UpdateTransportModeUI(TAB_UPGRADE_DATA *pData)
 {
     if (pData->transportMode == TRANSPORT_MODE_CAN) {
+        ShowWindow(pData->hLabelAdapter, SW_SHOW);
         ShowWindow(pData->hComboBaudrate, SW_SHOW);
         ShowWindow(pData->hComboUartBaudrate, SW_HIDE);
         ShowWindow(pData->hComboAdapter, SW_SHOW);
         SendMessageW(pData->hBtnCan, BM_SETCHECK, BST_CHECKED, 0);
         SendMessageW(pData->hBtnUart, BM_SETCHECK, BST_UNCHECKED, 0);
     } else {
+        ShowWindow(pData->hLabelAdapter, SW_HIDE);
         ShowWindow(pData->hComboBaudrate, SW_HIDE);
         ShowWindow(pData->hComboUartBaudrate, SW_SHOW);
         ShowWindow(pData->hComboAdapter, SW_HIDE);
@@ -348,7 +351,7 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
         cy += lineH;
 
         /* Row 1.5: Adapter type selector (only shown for CAN mode) */
-        CreateLabel(hwnd, hInst, -1, cx, cy + 3, lblW, CTRL_H, L"适配器:", pData->hFont);
+        pData->hLabelAdapter = CreateLabel(hwnd, hInst, -1, cx, cy + 3, lblW, CTRL_H, L"适配器:", pData->hFont);
         pData->hComboAdapter = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
             cx + lblW + 8, cy, 240, 200, hwnd, (HMENU)IDC_COMBO_ADAPTER, hInst, NULL);
@@ -904,7 +907,7 @@ HWND TabCanUpgrade_Create(HWND hParent, HINSTANCE hInst,
         0,
         TAB_UPGRADE_CLASS,
         L"",
-        WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
+        WS_CHILD | WS_VISIBLE,
         rcParent.left, rcParent.top,
         rcParent.right - rcParent.left,
         rcParent.bottom - rcParent.top,
