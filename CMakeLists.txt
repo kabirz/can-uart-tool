@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(ModHandlerPcTool VERSION 0.2.0 LANGUAGES C)
+project(ModHandlerPcTool VERSION 0.3.0 LANGUAGES C)
 
 add_compile_definitions(UNICODE _UNICODE)
 
