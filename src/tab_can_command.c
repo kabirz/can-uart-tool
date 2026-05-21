@@ -589,7 +589,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
             L"Consolas");
 
         int margin = 14;
-        int lineH = 30;
+        int lineH = 36;
         int cx, cy;
 
         /* ========== Group 1: Frame Configuration (left, upper) ========== */
@@ -624,6 +624,10 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
             WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
             cx + 174, cy, 90, 24, hwnd, (HMENU)IDC_RADIO_EXT_FRAME, hInst, NULL);
         SendMessageW(pData->hRadioExtFrame, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+
+        /* Default: 标准帧 */
+        SendMessageW(pData->hRadioStdFrame, BM_SETCHECK, BST_CHECKED, 0);
+
         cy += lineH;
 
         /* Row 3: Frame Type */
@@ -639,6 +643,10 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
             WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
             cx + 174, cy, 90, 24, hwnd, (HMENU)IDC_RADIO_REMOTE_FRAME, hInst, NULL);
         SendMessageW(pData->hRadioRemoteFrame, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+
+        /* Default: 数据帧 */
+        SendMessageW(pData->hRadioDataFrame, BM_SETCHECK, BST_CHECKED, 0);
+
         cy += lineH;
 
         /* Row 4: Data bytes */
