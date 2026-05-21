@@ -420,7 +420,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
             return 0;
         case IDM_HELP_ABOUT:
             MessageBoxW(hWnd,
-                        L"ModHandler PC Tool v0.3.0\n"
+                        L"ModHandler PC Tool v0.4.0\n"
                         L"基于 Win32 API 的激光测距系统 PC 端配套工具\n\n"
                         L"功能：\n"
                         L"  - LoRa 网关数据通信与测试\n"

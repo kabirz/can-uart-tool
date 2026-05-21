@@ -3,7 +3,7 @@
   <assemblyIdentity
     type="win32"
     name="ModHandlerPcTool"
-    version="0.2.0.0"/>
+    version="0.4.0.0"/>
 
   <!-- Per-Monitor V2 DPI Awareness: 文字在高 DPI 下清晰渲染 -->
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
