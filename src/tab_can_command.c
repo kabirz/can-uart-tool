@@ -98,6 +98,12 @@ typedef struct {
     HWND hBtnQueryGwid;
     HWND hBtnSetGwid;
 
+    /* Additional query buttons for the per-parameter layout (can query without power) */
+    HWND hBtnQueryMode;
+    HWND hBtnQueryCh1;
+    HWND hBtnQueryCh2;
+    HWND hBtnQueryPnum;
+
     /* Resizable group boxes */
     HWND hGrpLora;      /* Group 2: LoRa Config (stretches width) */
     HWND hGrpMonitor;   /* Group 3: Bus Monitor (stretches both) */
@@ -273,8 +279,10 @@ static void UpdateLoraControlStates(TAB_CMD_DATA *pData)
     SetWindowTextW(pData->hBtnLoraTest,
                    pData->loraTestMode ? L"退出测试" : L"测试模式");
 
-    /* All other LoRa controls: need CAN connection AND LoRa powered */
-    BOOL loraReady = connected && powered;
+    BOOL canQuery  = connected;           // 查询操作不需要上电
+    BOOL loraReady = connected && powered; // 设置和配置控件需要上电
+
+    /* Config controls (combos/edits): require power */
     EnableWindow(pData->hComboProt,   loraReady);
     EnableWindow(pData->hComboMode,   loraReady);
     EnableWindow(pData->hComboSpd1,   loraReady);
@@ -284,13 +292,21 @@ static void UpdateLoraControlStates(TAB_CMD_DATA *pData)
     EnableWindow(pData->hComboPnum,   loraReady);
     EnableWindow(pData->hEditNid,     loraReady);
     EnableWindow(pData->hEditGwid,    loraReady);
-    EnableWindow(pData->hBtnQueryCfg, loraReady);
+
+    /* Query buttons: only need CAN connection (can query even if not powered) */
+    EnableWindow(pData->hBtnQueryCfg,  canQuery);
+    EnableWindow(pData->hBtnQueryNid,  canQuery);
+    EnableWindow(pData->hBtnQueryGwid, canQuery);
+    EnableWindow(pData->hBtnQueryMode, canQuery);
+    EnableWindow(pData->hBtnQueryCh1,  canQuery);
+    EnableWindow(pData->hBtnQueryCh2,  canQuery);
+    EnableWindow(pData->hBtnQueryPnum, canQuery);
+
+    /* Set buttons: require power */
     EnableWindow(pData->hBtnSetMode,  loraReady);
     EnableWindow(pData->hBtnSetCh1,   loraReady);
     EnableWindow(pData->hBtnSetCh2,   loraReady);
     EnableWindow(pData->hBtnSetPnum,  loraReady);
-    EnableWindow(pData->hBtnQueryNid, loraReady);
-    EnableWindow(pData->hBtnQueryGwid,loraReady);
     EnableWindow(pData->hBtnSetGwid,  loraReady);
 
     /* Frame send controls: only need CAN connection */
@@ -578,7 +594,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
 
         /* ========== Group 1: Frame Configuration (left, upper) ========== */
         int grp1X = margin, grp1Y = margin;
-        int grp1W = 480, grp1H = 300;
+        int grp1W = 480, grp1H = 420;
         CreateWindowExW(0, L"BUTTON", L"帧配置",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             grp1X, grp1Y, grp1W, grp1H, hwnd, NULL, hInst, NULL);
@@ -587,16 +603,16 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         cy = grp1Y + 30;
 
         /* Row 1: CAN ID */
-        CreateLabel(hwnd, hInst, -1, cx, cy + 3, 70, 22, L"CAN ID:", pData->hFont);
+        CreateLabel(hwnd, hInst, -1, cx, cy + 3, 70, 24, L"CAN ID:", pData->hFont);
         pData->hEditCanId = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"101",
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
             cx + 78, cy, 200, 24, hwnd, (HMENU)IDC_EDIT_CAN_ID, hInst, NULL);
         SendMessageW(pData->hEditCanId, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
-        CreateLabel(hwnd, hInst, -1, cx + 286, cy + 3, 50, 22, L"(Hex)", pData->hFont);
+        CreateLabel(hwnd, hInst, -1, cx + 286, cy + 3, 50, 24, L"(Hex)", pData->hFont);
         cy += lineH;
 
         /* Row 2: Frame Format */
-        CreateLabel(hwnd, hInst, -1, cx, cy + 3, 70, 22,
+        CreateLabel(hwnd, hInst, -1, cx, cy + 3, 70, 24,
             L"帧格式:", pData->hFont);
         pData->hRadioStdFrame = CreateWindowExW(0, L"BUTTON",
             L"标准帧",
@@ -611,7 +627,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         cy += lineH;
 
         /* Row 3: Frame Type */
-        CreateLabel(hwnd, hInst, -1, cx, cy + 3, 70, 22,
+        CreateLabel(hwnd, hInst, -1, cx, cy + 3, 70, 24,
             L"帧类型:", pData->hFont);
         pData->hRadioDataFrame = CreateWindowExW(0, L"BUTTON",
             L"数据帧",
@@ -626,7 +642,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         cy += lineH;
 
         /* Row 4: Data bytes */
-        CreateLabel(hwnd, hInst, -1, cx, cy + 3, 70, 22,
+        CreateLabel(hwnd, hInst, -1, cx, cy + 3, 70, 24,
             L"数据:", pData->hFont);
         pData->hEditCanData = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT",
             L"01 02 03 04 05 06 07 08",
@@ -653,72 +669,79 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
             grp2X, grp2Y, grp2W, grp2H, hwnd, NULL, hInst, NULL);
 
         cx = grp2X + 14;
-        cy = grp2Y + 30;
+        cy = grp2Y + 28;
 
-        /* Row 1: Power + Test + Query */
-        int bw = 100, bh = 28, bg = 8;
+        /* Top row: Special controls */
+        int bw = 88, bh = 26;
 
-        pData->hBtnLoraPower = CreateWindowExW(0, L"BUTTON",
-            L"LoRa 上电",
+        pData->hBtnLoraPower = CreateWindowExW(0, L"BUTTON", L"LoRa 上电",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            cx, cy, bw + 20, bh,
+            cx, cy, bw + 8, bh,
             hwnd, (HMENU)IDC_BUTTON_LORA_POWER, hInst, NULL);
         SendMessageW(pData->hBtnLoraPower, WM_SETFONT, (WPARAM)pData->hFontBold, TRUE);
 
-        pData->hBtnLoraTest = CreateWindowExW(0, L"BUTTON",
-            L"测试模式",
+        pData->hBtnLoraTest = CreateWindowExW(0, L"BUTTON", L"测试模式",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            cx + bw + 28, cy, bw + 10, bh,
+            cx + bw + 12, cy, bw, bh,
             hwnd, (HMENU)IDC_BUTTON_LORA_TEST, hInst, NULL);
         SendMessageW(pData->hBtnLoraTest, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
-        pData->hBtnQueryCfg = CreateWindowExW(0, L"BUTTON", L"查询配置",
+        pData->hBtnQueryCfg = CreateWindowExW(0, L"BUTTON", L"查询所有",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            cx + 2 * (bw + 18), cy, bw, bh,
+            cx + 2 * (bw + 8), cy, bw, bh,
             hwnd, (HMENU)IDC_BUTTON_LORA_QUERY_CFG, hInst, NULL);
         SendMessageW(pData->hBtnQueryCfg, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
-        cy += bh + 8;
+        cy += bh + 14;
 
-        /* Row 2: Protocol / Mode (same line) */
-        int llW = 56, cbW = 150, cbGap = 20;
+        /* === 协议 + 模式 (同一行，只用一组按钮) === */
+        int labelW = 56;   // 统一 label 宽度，解决遮挡
+        int btnW   = 48;
+        int rowGap = 38;   // 加大行间距
 
-        CreateLabel(hwnd, hInst, -1, cx, cy + 3, llW, 22,
-            L"协议:", pData->hFont);
+        // 协议
+        CreateLabel(hwnd, hInst, -1, cx, cy + 1, labelW, 24, L"协议:", pData->hFont);
         pData->hComboProt = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-            cx + llW + 4, cy, cbW, 200,
-            hwnd, (HMENU)IDC_EDIT_LORA_PROT, hInst, NULL);
+            cx + labelW + 4, cy, 100, 180, hwnd, (HMENU)IDC_EDIT_LORA_PROT, hInst, NULL);
         SendMessageW(pData->hComboProt, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
-        SendMessageW(pData->hComboProt, CB_ADDSTRING, 0, (LPARAM)L"NODE (0)");
-        SendMessageW(pData->hComboProt, CB_ADDSTRING, 0, (LPARAM)L"LG210 (1)");
-        SendMessageW(pData->hComboProt, CB_ADDSTRING, 0, (LPARAM)L"LG220 (2)");
+        SendMessageW(pData->hComboProt, CB_ADDSTRING, 0, (LPARAM)L"NODE");
+        SendMessageW(pData->hComboProt, CB_ADDSTRING, 0, (LPARAM)L"LG210");
+        SendMessageW(pData->hComboProt, CB_ADDSTRING, 0, (LPARAM)L"LG220");
         SendMessageW(pData->hComboProt, CB_SETCURSEL, 1, 0);
 
-        int ox2 = cx + llW + 4 + cbW + cbGap;
-
-        CreateLabel(hwnd, hInst, -1, ox2, cy + 3, llW, 22,
-            L"模式:", pData->hFont);
+        // 模式（同一行）
+        int modeX = cx + labelW + 110;
+        CreateLabel(hwnd, hInst, -1, modeX, cy + 1, 40, 24, L"模式:", pData->hFont);
         pData->hComboMode = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-            ox2 + llW + 4, cy, cbW, 200,
-            hwnd, (HMENU)IDC_EDIT_LORA_MODE, hInst, NULL);
+            modeX + 44, cy, 100, 160, hwnd, (HMENU)IDC_EDIT_LORA_MODE, hInst, NULL);
         SendMessageW(pData->hComboMode, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
-        SendMessageW(pData->hComboMode, CB_ADDSTRING, 0, (LPARAM)L"FP (0)");
-        SendMessageW(pData->hComboMode, CB_ADDSTRING, 0, (LPARAM)L"TRANS (1)");
-        SendMessageW(pData->hComboMode, CB_ADDSTRING, 0, (LPARAM)L"NET (2)");
+        SendMessageW(pData->hComboMode, CB_ADDSTRING, 0, (LPARAM)L"FP");
+        SendMessageW(pData->hComboMode, CB_ADDSTRING, 0, (LPARAM)L"TRANS");
+        SendMessageW(pData->hComboMode, CB_ADDSTRING, 0, (LPARAM)L"NET");
         SendMessageW(pData->hComboMode, CB_SETCURSEL, 1, 0);
-        cy += lineH;
 
-        /* Row 3: CH1 (SPD + CH) */
-        CreateLabel(hwnd, hInst, -1, cx, cy + 3, llW, 22,
-            L"CH1:", pData->hFont);
-        CreateLabel(hwnd, hInst, -1, cx + llW + 4, cy + 3, 56, 22,
-            L"SPD:", pData->hFont);
+        // 协议+模式共享一组按钮（对齐）
+        int btnX = cx + 320;
+        pData->hBtnQueryMode = CreateWindowExW(0, L"BUTTON", L"查询",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, btnX, cy, btnW, 22,
+            hwnd, (HMENU)IDC_BUTTON_LORA_SET_MODE, hInst, NULL);
+        SendMessageW(pData->hBtnQueryMode, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+
+        pData->hBtnSetMode = CreateWindowExW(0, L"BUTTON", L"设置",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, btnX + btnW + 4, cy, btnW, 24,
+            hwnd, (HMENU)IDC_BUTTON_LORA_SET_MODE, hInst, NULL);
+        SendMessageW(pData->hBtnSetMode, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+
+        cy += rowGap;
+
+        /* CH1 */
+        CreateLabel(hwnd, hInst, -1, cx, cy + 1, labelW, 24, L"CH1:", pData->hFont);
+        CreateLabel(hwnd, hInst, -1, cx + labelW + 4, cy + 1, 36, 24, L"SPD:", pData->hFont);
         pData->hComboSpd1 = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-            cx + llW + 62, cy, 80, 200,
-            hwnd, (HMENU)IDC_COMBO_LORA_SPD1, hInst, NULL);
+            cx + labelW + 42, cy, 56, 140, hwnd, (HMENU)IDC_COMBO_LORA_SPD1, hInst, NULL);
         SendMessageW(pData->hComboSpd1, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
         for (int s = 4; s <= 11; s++) {
             wchar_t sbuf[8]; wsprintfW(sbuf, L"%d", s);
@@ -726,26 +749,30 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         }
         SendMessageW(pData->hComboSpd1, CB_SETCURSEL, 3, 0);
 
-        CreateLabel(hwnd, hInst, -1, cx + llW + 150, cy + 3, 30, 22,
-            L"CH:", pData->hFont);
+        CreateLabel(hwnd, hInst, -1, cx + labelW + 104, cy + 1, 24, 24, L"CH:", pData->hFont);
         pData->hEditCh1 = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"4800",
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-            cx + llW + 182, cy, 80, 24,
-            hwnd, (HMENU)IDC_EDIT_LORA_CH1, hInst, NULL);
+            cx + labelW + 130, cy, 64, 24, hwnd, (HMENU)IDC_EDIT_LORA_CH1, hInst, NULL);
         SendMessageW(pData->hEditCh1, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
-        CreateLabel(hwnd, hInst, -1, cx + llW + 266, cy + 3, 150, 22,
-            L"(4100~5100KHz)", pData->hFont);
-        cy += lineH;
 
-        /* Row 4: CH2 (SPD + CH) */
-        CreateLabel(hwnd, hInst, -1, cx, cy + 3, llW, 22,
-            L"CH2:", pData->hFont);
-        CreateLabel(hwnd, hInst, -1, cx + llW + 4, cy + 3, 56, 22,
-            L"SPD:", pData->hFont);
+        pData->hBtnQueryCh1 = CreateWindowExW(0, L"BUTTON", L"查询",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, btnX, cy, btnW, 22,
+            hwnd, (HMENU)IDC_BUTTON_LORA_SET_CH1, hInst, NULL);
+        SendMessageW(pData->hBtnQueryCh1, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+
+        pData->hBtnSetCh1 = CreateWindowExW(0, L"BUTTON", L"设置",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, btnX + btnW + 4, cy, btnW, 24,
+            hwnd, (HMENU)IDC_BUTTON_LORA_SET_CH1, hInst, NULL);
+        SendMessageW(pData->hBtnSetCh1, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+
+        cy += rowGap;
+
+        /* CH2 */
+        CreateLabel(hwnd, hInst, -1, cx, cy + 1, labelW, 24, L"CH2:", pData->hFont);
+        CreateLabel(hwnd, hInst, -1, cx + labelW + 4, cy + 1, 36, 24, L"SPD:", pData->hFont);
         pData->hComboSpd2 = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-            cx + llW + 62, cy, 80, 200,
-            hwnd, (HMENU)IDC_COMBO_LORA_SPD2, hInst, NULL);
+            cx + labelW + 42, cy, 56, 140, hwnd, (HMENU)IDC_COMBO_LORA_SPD2, hInst, NULL);
         SendMessageW(pData->hComboSpd2, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
         for (int s = 4; s <= 11; s++) {
             wchar_t sbuf[8]; wsprintfW(sbuf, L"%d", s);
@@ -753,103 +780,84 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         }
         SendMessageW(pData->hComboSpd2, CB_SETCURSEL, 3, 0);
 
-        CreateLabel(hwnd, hInst, -1, cx + llW + 150, cy + 3, 30, 22,
-            L"CH:", pData->hFont);
+        CreateLabel(hwnd, hInst, -1, cx + labelW + 104, cy + 1, 24, 24, L"CH:", pData->hFont);
         pData->hEditCh2 = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"4800",
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-            cx + llW + 182, cy, 80, 24,
-            hwnd, (HMENU)IDC_EDIT_LORA_CH2, hInst, NULL);
+            cx + labelW + 130, cy, 64, 24, hwnd, (HMENU)IDC_EDIT_LORA_CH2, hInst, NULL);
         SendMessageW(pData->hEditCh2, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
-        CreateLabel(hwnd, hInst, -1, cx + llW + 266, cy + 3, 150, 22,
-            L"(4100~5100KHz)", pData->hFont);
-        cy += lineH;
 
-        /* Row 5: PNUM + GWID */
-        CreateLabel(hwnd, hInst, -1, cx, cy + 3, llW, 22,
-            L"PNUM:", pData->hFont);
+        pData->hBtnQueryCh2 = CreateWindowExW(0, L"BUTTON", L"查询",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, btnX, cy, btnW, 22,
+            hwnd, (HMENU)IDC_BUTTON_LORA_SET_CH2, hInst, NULL);
+        SendMessageW(pData->hBtnQueryCh2, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+
+        pData->hBtnSetCh2 = CreateWindowExW(0, L"BUTTON", L"设置",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, btnX + btnW + 4, cy, btnW, 24,
+            hwnd, (HMENU)IDC_BUTTON_LORA_SET_CH2, hInst, NULL);
+        SendMessageW(pData->hBtnSetCh2, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+
+        cy += rowGap;
+
+        /* PNUM */
+        CreateLabel(hwnd, hInst, -1, cx, cy + 1, labelW, 24, L"PNUM:", pData->hFont);
         pData->hComboPnum = CreateWindowExW(0, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-            cx + llW + 4, cy, 80, 200,
-            hwnd, (HMENU)IDC_COMBO_LORA_PNUM, hInst, NULL);
+            cx + labelW + 4, cy, 64, 140, hwnd, (HMENU)IDC_COMBO_LORA_PNUM, hInst, NULL);
         SendMessageW(pData->hComboPnum, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
         SendMessageW(pData->hComboPnum, CB_ADDSTRING, 0, (LPARAM)L"0");
         SendMessageW(pData->hComboPnum, CB_ADDSTRING, 0, (LPARAM)L"1");
         SendMessageW(pData->hComboPnum, CB_ADDSTRING, 0, (LPARAM)L"2");
         SendMessageW(pData->hComboPnum, CB_SETCURSEL, 0, 0);
 
-        CreateLabel(hwnd, hInst, -1, ox2, cy + 3, llW, 22,
-            L"GWID:", pData->hFont);
-        pData->hEditGwid = CreateWindowExW(0, L"STATIC", L"00000000",
-            WS_CHILD | WS_VISIBLE | SS_LEFT,
-            ox2 + llW + 4, cy + 3, 120, 22,
-            hwnd, (HMENU)IDC_EDIT_LORA_GWID, hInst, NULL);
-        SendMessageW(pData->hEditGwid, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
-        cy += lineH;
+        pData->hBtnQueryPnum = CreateWindowExW(0, L"BUTTON", L"查询",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, btnX, cy, btnW, 22,
+            hwnd, (HMENU)IDC_BUTTON_LORA_SET_PNUM, hInst, NULL);
+        SendMessageW(pData->hBtnQueryPnum, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
-        /* Row 6: NID (read-only label) */
-        CreateLabel(hwnd, hInst, -1, cx, cy + 3, llW, 22,
-            L"NID:", pData->hFont);
-        pData->hEditNid = CreateWindowExW(0, L"STATIC", L"00000000",
-            WS_CHILD | WS_VISIBLE | SS_LEFT,
-            cx + llW + 4, cy + 3, 120, 22,
-            hwnd, (HMENU)IDC_EDIT_LORA_NID, hInst, NULL);
-        SendMessageW(pData->hEditNid, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
-        cy += lineH + 4;
-
-        /* Row 7: Set buttons */
-
-        pData->hBtnSetMode = CreateWindowExW(0, L"BUTTON", L"设置模式",
-            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            cx, cy, bw, bh,
-            hwnd, (HMENU)IDC_BUTTON_LORA_SET_MODE, hInst, NULL);
-        SendMessageW(pData->hBtnSetMode, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
-
-        pData->hBtnSetCh1 = CreateWindowExW(0, L"BUTTON", L"设置CH1",
-            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            cx + bw + bg, cy, bw, bh,
-            hwnd, (HMENU)IDC_BUTTON_LORA_SET_CH1, hInst, NULL);
-        SendMessageW(pData->hBtnSetCh1, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
-
-        pData->hBtnSetCh2 = CreateWindowExW(0, L"BUTTON", L"设置CH2",
-            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            cx + 2 * (bw + bg), cy, bw, bh,
-            hwnd, (HMENU)IDC_BUTTON_LORA_SET_CH2, hInst, NULL);
-        SendMessageW(pData->hBtnSetCh2, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
-
-        pData->hBtnSetPnum = CreateWindowExW(0, L"BUTTON", L"设置PNUM",
-            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            cx + 3 * (bw + bg), cy, bw, bh,
+        pData->hBtnSetPnum = CreateWindowExW(0, L"BUTTON", L"设置",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, btnX + btnW + 4, cy, btnW, 24,
             hwnd, (HMENU)IDC_BUTTON_LORA_SET_PNUM, hInst, NULL);
         SendMessageW(pData->hBtnSetPnum, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
-        cy += bh + 6;
+        cy += rowGap;
 
-        /* Row 8: NID query + GWID query/set */
-        pData->hBtnQueryNid = CreateWindowExW(0, L"BUTTON", L"查询 NID",
-            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            cx, cy, bw, bh,
-            hwnd, (HMENU)IDC_BUTTON_LORA_QUERY_NID, hInst, NULL);
-        SendMessageW(pData->hBtnQueryNid, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+        /* GWID */
+        CreateLabel(hwnd, hInst, -1, cx, cy + 1, labelW, 24, L"GWID:", pData->hFont);
+        pData->hEditGwid = CreateWindowExW(0, L"STATIC", L"00000000",
+            WS_CHILD | WS_VISIBLE | SS_LEFT,
+            cx + labelW + 4, cy + 1, 90, 20, hwnd, (HMENU)IDC_EDIT_LORA_GWID, hInst, NULL);
+        SendMessageW(pData->hEditGwid, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
 
-        pData->hBtnQueryGwid = CreateWindowExW(0, L"BUTTON", L"查询 GWID",
-            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            cx + bw + bg, cy, bw, bh,
+        pData->hBtnQueryGwid = CreateWindowExW(0, L"BUTTON", L"查询",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, btnX, cy, btnW, 24,
             hwnd, (HMENU)IDC_BUTTON_LORA_QUERY_GWID, hInst, NULL);
         SendMessageW(pData->hBtnQueryGwid, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
-        pData->hBtnSetGwid = CreateWindowExW(0, L"BUTTON", L"设置 GWID",
-            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            cx + 2 * (bw + bg), cy, bw, bh,
+        pData->hBtnSetGwid = CreateWindowExW(0, L"BUTTON", L"设置",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, btnX + btnW + 4, cy, btnW, 24,
             hwnd, (HMENU)IDC_BUTTON_LORA_SET_GWID, hInst, NULL);
         SendMessageW(pData->hBtnSetGwid, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
 
-        cy += bh + 6;
+        cy += rowGap;
 
-        /* Status label */
+        /* NID */
+        CreateLabel(hwnd, hInst, -1, cx, cy + 1, labelW, 24, L"NID:", pData->hFont);
+        pData->hEditNid = CreateWindowExW(0, L"STATIC", L"00000000",
+            WS_CHILD | WS_VISIBLE | SS_LEFT,
+            cx + labelW + 4, cy + 1, 90, 20, hwnd, (HMENU)IDC_EDIT_LORA_NID, hInst, NULL);
+        SendMessageW(pData->hEditNid, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
+
+        pData->hBtnQueryNid = CreateWindowExW(0, L"BUTTON", L"查询",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, btnX, cy, btnW, 24,
+            hwnd, (HMENU)IDC_BUTTON_LORA_QUERY_NID, hInst, NULL);
+        SendMessageW(pData->hBtnQueryNid, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
+
+        /* Status label 放到 Group 最底部 */
+        int statusY = grp2Y + grp2H - 26;
         pData->hLabelLoraStatus = CreateWindowExW(0, L"STATIC",
             L"请先上电 LoRa",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
-            cx, cy + 2, grp2W - 28, 22,
+            cx, statusY, grp2W - 28, 20,
             hwnd, (HMENU)IDC_LABEL_LORA_STATUS, hInst, NULL);
         SendMessageW(pData->hLabelLoraStatus, WM_SETFONT,
             (WPARAM)pData->hFont, TRUE);
@@ -1139,7 +1147,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         if (cx < 100 || cy < 100) return 0;
 
         int margin = 14;
-        int grp1W = 480, grp1H = 300;
+        int grp1W = 480, grp1H = 420;
 
         /* Group 2: LoRa Config — stretch width */
         int grp2X = margin + grp1W + 10;
