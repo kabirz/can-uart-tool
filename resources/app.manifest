@@ -3,7 +3,7 @@
   <assemblyIdentity
     type="win32"
     name="ModHandlerPcTool"
-    version="0.4.0.0"/>
+    version="0.4.1.0"/>
 
   <!-- System DPI Awareness: Windows 自动缩放，保证不同电脑显示一致 -->
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
