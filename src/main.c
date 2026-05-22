@@ -295,10 +295,10 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 
         /* Set tab control font */
         g_App.hTabFont = CreateFontW(
-            28, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            FONT_SIZE_TAB, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
-            L"Microsoft YaHei");
+            FONT_FACE_UI);
         SendMessageW(g_App.hTabCtrl, WM_SETFONT, (WPARAM)g_App.hTabFont, TRUE);
 
         /* Increase tab label spacing (horizontal, vertical padding) */
@@ -323,10 +323,10 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 
         /* Create UI font for tab pages */
         g_App.hFont = CreateFontW(
-            24, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            FONT_SIZE_UI, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
-            L"Microsoft YaHei");
+            FONT_FACE_UI);
 
         /* Create tab pages */
         CreateTabPages(g_App.hTabCtrl, hWnd, hInst);

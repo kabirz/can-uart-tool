@@ -196,7 +196,14 @@
 #define BTN_W                           110
 #define COMBO_W                         160
 #define LABEL_W                         72
-#define FONT_H                          24
+/* Font face names — 统一修改字体 */
+#define FONT_FACE_UI                    L"Microsoft YaHei"
+#define FONT_FACE_MONO                  L"Consolas"
+
+/* Font sizes — 统一修改字号 */
+#define FONT_SIZE_UI                    24
+#define FONT_SIZE_TAB                   28
+#define FONT_SIZE_MONO                  20
 
 #define IDC_STATIC                      (-1)
 

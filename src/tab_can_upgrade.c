@@ -346,15 +346,15 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
 
         /* Create fonts */
         pData->hFont = CreateFontW(
-            FONT_H, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            FONT_SIZE_UI, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
-            L"Microsoft YaHei");
+            FONT_FACE_UI);
         pData->hFontBold = CreateFontW(
-            FONT_H, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+            FONT_SIZE_UI, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
-            L"Microsoft YaHei");
+            FONT_FACE_UI);
 
         /* ---- Layout coordinates ---- */
         int margin = MARGIN;

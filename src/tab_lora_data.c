@@ -279,20 +279,20 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
 
         /* Create fonts */
         pData->hFont = CreateFontW(
-            24, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            FONT_SIZE_UI, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
-            L"Microsoft YaHei");
+            FONT_FACE_UI);
         pData->hFontBold = CreateFontW(
-            24, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+            FONT_SIZE_UI, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
-            L"Microsoft YaHei");
+            FONT_FACE_UI);
         pData->hFontMono = CreateFontW(
-            20, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            FONT_SIZE_MONO, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN,
-            L"Consolas");
+            FONT_FACE_MONO);
 
         int margin = 14;
         int lineH = 36;

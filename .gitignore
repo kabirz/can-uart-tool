@@ -7,3 +7,5 @@ build/
 *.pdb
 .cache
 compile_commands.json
+.sisyphus/
+toolchain-mingw.cmake
