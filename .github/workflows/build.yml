@@ -32,6 +32,8 @@ jobs:
           mkdir $dir
           copy build\Release\modhandler-pc-tool.exe $dir\
           copy build\loralib\Release\lora_gateway_sdk.dll $dir\
+          copy build\loralib\Release\lora_gateway_sdk.lib $dir\
+          copy build\loralib\Release\lora_sdk.lib $dir\
           copy loralib\lora_sdk.h $dir\
           copy loralib\lora_sdk_example.c $dir\
           copy loralib\README.md $dir\

@@ -47,12 +47,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName",      "kabirz"
             VALUE "FileDescription",  "ModHandler PC Tool — 激光测距系统配套工具"
-            VALUE "FileVersion",      "0.4.1.0"
+            VALUE "FileVersion",      "0.4.2.0"
             VALUE "InternalName",     "modhandler-pc-tool"
             VALUE "LegalCopyright",   "Copyright © 2026 kabirz"
             VALUE "OriginalFilename", "modhandler-pc-tool.exe"
             VALUE "ProductName",      "ModHandler PC Tool"
-            VALUE "ProductVersion",   "0.4.1.0"
+            VALUE "ProductVersion",   "0.4.2.0"
         END
     END
     BLOCK "VarFileInfo"
