@@ -27,7 +27,7 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
-          $ver = if ($env:GITHUB_REF -match 'refs/tags/v(.+)$') { $matches[1] } else { 'snapshot' }
+          $ver = if ($env:GITHUB_REF -match 'refs/tags/v(.+)$') { $matches[1] } else { git describe --tags --always }
           $name = "modhandler-pc-tool-v$ver"
           mkdir $name
           copy build\Release\modhandler-pc-tool.exe $name\
