@@ -229,6 +229,12 @@ static void AppendLog(TAB_LORA_CFG *pData, const char *text)
     MultiByteToWideChar(CP_UTF8, 0, text, -1, wtext, wlen);
 
     int totalLen = GetWindowTextLengthW(pData->hLogEdit);
+    if (totalLen > 100000) {
+        SendMessageW(pData->hLogEdit, EM_SETSEL, 0, totalLen / 4);
+        SendMessageW(pData->hLogEdit, EM_REPLACESEL, FALSE, (LPARAM)L"");
+        totalLen = GetWindowTextLengthW(pData->hLogEdit);
+    }
+
     SendMessageW(pData->hLogEdit, EM_SETSEL, totalLen, totalLen);
     SendMessageW(pData->hLogEdit, EM_REPLACESEL, FALSE, (LPARAM)ts);
     SendMessageW(pData->hLogEdit, EM_REPLACESEL, FALSE, (LPARAM)wtext);
@@ -1006,6 +1012,7 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
             logX, logY, logW, logH,
             hwnd, (HMENU)IDC_CFG_LOG_EDIT, hInst, NULL);
         SendMessageW(pData->hLogEdit, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
+        SendMessageW(pData->hLogEdit, EM_LIMITTEXT, 0x7FFFFFFE, 0);
 
         pData->hBtnClear = CreateBtn(hwnd, hInst, IDC_CFG_CLEAR_BTN,
             margin + grp5W - 100, grp5Y + grp5H - 32, 80, smallBtnH,

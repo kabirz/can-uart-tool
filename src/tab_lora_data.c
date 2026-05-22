@@ -186,6 +186,12 @@ static void AppendLogText(TAB_LORA_DATA *pData, const wchar_t *text)
     if (!hLog) return;
 
     int len = GetWindowTextLengthW(hLog);
+    if (len > 100000) {
+        SendMessageW(hLog, EM_SETSEL, 0, len / 4);
+        SendMessageW(hLog, EM_REPLACESEL, FALSE, (LPARAM)L"");
+        len = GetWindowTextLengthW(hLog);
+    }
+
     SendMessageW(hLog, EM_SETSEL, len, len);
     SendMessageW(hLog, EM_REPLACESEL, FALSE, (LPARAM)text);
     SendMessageW(hLog, EM_SCROLLCARET, 0, 0);
@@ -420,6 +426,7 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
             logEditX, logEditY, logEditW, logEditH,
             hwnd, (HMENU)IDC_LORA_LOG_EDIT, hInst, NULL);
         SendMessageW(pData->hLogEdit, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
+        SendMessageW(pData->hLogEdit, EM_LIMITTEXT, 0x7FFFFFFE, 0);
 
         /* ========== Group 3: Operations (full width, ~40px) ========== */
         int grp3Y = grp2Y + grp2H + 8;

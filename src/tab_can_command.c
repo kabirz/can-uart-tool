@@ -221,7 +221,7 @@ static void AppendMonitorLine(TAB_CMD_DATA *pData, int is_tx,
     int len = GetWindowTextLengthW(hMon);
 
     /* Trim old content when approaching Edit control limit (~32KB) */
-    if (len > 30000) {
+    if (len > 100000) {
         /* Remove first quarter of text to make room */
         int cutLen = len / 4;
         SendMessageW(hMon, EM_SETSEL, 0, cutLen);
@@ -904,8 +904,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
             monX, monY, monW, monH,
             hwnd, (HMENU)IDC_EDIT_CAN_MONITOR, hInst, NULL);
         SendMessageW(pData->hEditMonitor, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
-
-        /* Auto-scroll checkbox + Clear button */
+        SendMessageW(pData->hEditMonitor, EM_LIMITTEXT, 0x7FFFFFFE, 0);
         cx = grp3X + grp3W - 10;
         cy = grp3Y + grp3H - 34;
 
