@@ -874,8 +874,8 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         int statusY = grp2Y + grp2H - 26;
         pData->hLabelLoraStatus = CreateWindowExW(0, L"STATIC",
             L"请先上电 LoRa",
-            WS_CHILD | WS_VISIBLE | SS_LEFT,
-            cx, statusY, grp2W - 28, 20,
+            WS_CHILD | WS_VISIBLE | SS_LEFT | SS_ENDELLIPSIS,
+            cx, statusY, 220, 20,
             hwnd, (HMENU)IDC_LABEL_LORA_STATUS, hInst, NULL);
         SendMessageW(pData->hLabelLoraStatus, WM_SETFONT,
             (WPARAM)pData->hFont, TRUE);

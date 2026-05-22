@@ -341,8 +341,8 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
     case WM_GETMINMAXINFO: {
         /* Set minimum window size so controls remain usable */
         MINMAXINFO *mmi = (MINMAXINFO *)lParam;
-        mmi->ptMinTrackSize.x = 900;
-        mmi->ptMinTrackSize.y = 650;
+        mmi->ptMinTrackSize.x = 1060;
+        mmi->ptMinTrackSize.y = 780;
         return 0;
     }
 
