@@ -1,0 +1,27 @@
+name: Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-msvc:
+    name: MSVC (Release)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build -A x64
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: modhandler-pc-tool-msvc
+          path: |
+            build/Release/modhandler-pc-tool.exe
+            build/loralib/Release/lora_gateway_sdk.dll
