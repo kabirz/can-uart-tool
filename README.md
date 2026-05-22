@@ -55,7 +55,7 @@ can-uart-tool/
 ### Visual Studio（推荐）
 
 ```bash
-cmake -B build -G "Visual Studio 18 2026" -A x64
+cmake -B build -A x64
 cmake --build build --config Release
 ```
 
@@ -74,7 +74,7 @@ cmake --build build
 
 ```bash
 rm -rf build
-cmake -B build -G "Visual Studio 18 2026" -A x64
+cmake -B build -A x64
 cmake --build build --config Release
 ```
 

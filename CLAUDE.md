@@ -8,11 +8,11 @@ Win32 桌面应用，C 语言，基于 Tab 控件的激光测距系统 PC 端配
 
 ```bash
 # Visual Studio 2026 (MSVC) — 推荐
-cmake -B build -G "Visual Studio 18 2026" -A x64
+cmake -B build -A x64
 cmake --build build --config Release
 
 # 清理重建
-rm -rf build && cmake -B build -G "Visual Studio 18 2026" -A x64 && cmake --build build --config Release
+rm -rf build && cmake -B build -A x64 && cmake --build build --config Release
 ```
 
 输出：`build/Release/modhandler-pc-tool.exe`

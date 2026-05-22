@@ -862,7 +862,7 @@ cmake -B build -G "MinGW Makefiles"
 cmake --build build
 
 # MSVC
-cmake -B build -G "Visual Studio 18 2026" -A x64
+cmake -B build -A x64
 cmake --build build --config Release
 ```
 

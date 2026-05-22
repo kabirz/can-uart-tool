@@ -427,8 +427,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
                         L"  - LoRa 网关配置管理\n"
                         L"  - CAN 帧收发与监控\n"
                         L"  - 固件升级\n\n"
-                        L"依赖：PCAN-Basic SDK / IXXAT VCI SDK（运行时动态加载）\n"
-                         L"编译：CMake + Visual Studio 2026",
+                        L"依赖：PCAN-Basic SDK / IXXAT VCI SDK（运行时动态加载）",
                         L"关于 ModHandler PC Tool",
                         MB_OK | MB_ICONINFORMATION);
             return 0;
