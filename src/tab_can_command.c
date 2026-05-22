@@ -205,8 +205,10 @@ static void AppendMonitorLine(TAB_CMD_DATA *pData, int is_tx,
         if (can_id == CANID_HANDLER_STATE && dlc >= 5) {
             int16_t x = (int16_t)((data[0] << 8) | data[1]);
             int16_t y = (int16_t)((data[2] << 8) | data[3]);
-            pos += wsprintfW(line + pos, L"  X=%+d° Y=%+d° 按键=%s",
-                             x, y, data[4] == 0 ? L"按下" : L"松开");
+            pos += wsprintfW(line + pos, L"  X=%s%d° Y=%s%d° 按键=%s",
+                             x >= 0 ? L"+" : L"", x,
+                             y >= 0 ? L"+" : L"", y,
+                             data[4] == 0 ? L"按下" : L"松开");
         } else {
             for (int i = 0; i < dlc && i < 8; i++) {
                 pos += wsprintfW(line + pos, L" %02X", data[i]);

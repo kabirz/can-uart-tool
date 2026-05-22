@@ -301,9 +301,9 @@ void sdk_tcp_send_rssi(lora_sdk_t *sdk, uint32_t nid,
     if (sdk->tcp_sock == INVALID_SOCKET) return;
 
     uint8_t payload[4] = { LORA_DATA_RSSI, snr, rssi, test_flag };
-    sdk_tcp_send_frame(sdk, nid, payload, 3);
+    sdk_tcp_send_frame(sdk, nid, payload, 4);
 
     char desc[64];
-    snprintf(desc, sizeof(desc), "TX RSSI: raw=%d test=%d", (int)(int8_t)rssi, test_flag);
+    snprintf(desc, sizeof(desc), "TX RSSI: rssi=%d snr=%d, test=%d", (int)(int8_t)rssi, (int)(int8_t)snr, test_flag);
     SDK_CALL(sdk, on_log, desc, LORA_SDK_LOG_TCP);
 }
