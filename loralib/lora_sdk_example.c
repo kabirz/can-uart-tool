@@ -25,6 +25,7 @@
 /*  Synchronization: wait for async events in main thread             */
 /* ------------------------------------------------------------------ */
 
+static void do_send_scanner(lora_sdk_t *sdk);
 #ifdef _WIN32
 #include <windows.h>
 static HANDLE g_connEvent     = NULL;
@@ -85,6 +86,7 @@ static void on_frame(void *ud, uint32_t nid,
             printf("  遥测: X=%d, Y=%d, 按键=%s\n",
                    x, y, btn ? "松开" : "按下");
             // TODO 这里需要下发模拟扫描仪合并帧 结构体为 lora_scanner_data_t，打包函数为 lora_scanner_pack，发送函数为 lora_sdk_send_frame
+            do_send_scanner(g_sdk_for_echo);
         }
         break;
     }
