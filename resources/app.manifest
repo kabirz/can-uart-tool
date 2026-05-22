@@ -5,11 +5,10 @@
     name="ModHandlerPcTool"
     version="0.4.0.0"/>
 
-  <!-- Per-Monitor V2 DPI Awareness: 文字在高 DPI 下清晰渲染 -->
+  <!-- System DPI Awareness: Windows 自动缩放，保证不同电脑显示一致 -->
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
     <windowsSettings>
-      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
-      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true</dpiAware>
     </windowsSettings>
   </application>
 
