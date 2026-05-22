@@ -4,7 +4,7 @@
  *
  * lora_sdk_tcp.c — TCP connection management + frame send/recv
  *
- * Non-blocking connect with watcher thread.
+ * WSAEventSelect event-driven I/O for low-latency receive.
  * Recv thread parses frames and invokes callbacks directly.
  * No HWND/PostMessage dependency.
  */
@@ -62,79 +62,94 @@ static int parse_frame(lora_sdk_t *sdk, const uint8_t *data, int len)
 }
 
 /* ================================================================
- * TCP recv thread — select + recv + inline frame parsing
+ * TCP recv thread — WSAEventSelect event-driven I/O
  * ================================================================ */
 
 static DWORD WINAPI tcp_recv_worker(LPVOID param)
 {
     lora_sdk_t *sdk = (lora_sdk_t *)param;
 
-    while (InterlockedCompareExchange(&sdk->tcp_running, 1, 1)) {
-        fd_set fds;
-        FD_ZERO(&fds);
-        FD_SET(sdk->tcp_sock, &fds);
-        struct timeval tv = { 1, 0 };
-        int sel = select(0, &fds, NULL, NULL, &tv);
-        if (sel == SOCKET_ERROR) break;
-        if (sel == 0) continue;
+    /* 创建事件对象, 绑定 socket 的 FD_READ | FD_CLOSE */
+    WSAEVENT sock_event = WSACreateEvent();
+    if (sock_event == WSA_INVALID_EVENT) return 1;
 
-        uint8_t buf[2048];
-        int bytes = recv(sdk->tcp_sock, (char *)buf, sizeof(buf), 0);
-        if (bytes == 0 || bytes == SOCKET_ERROR) break;
-
-        /* 缓冲区溢出保护 */
-        if (sdk->tcp_rx_len + bytes > SDK_RX_BUF_MAX) {
-            SDK_CALL(sdk, on_log, "RX buffer overflow, data dropped", LORA_SDK_LOG_TCP);
-            sdk->tcp_rx_len = 0;
-        }
-        memcpy(sdk->tcp_rx_buf + sdk->tcp_rx_len, buf, bytes);
-        sdk->tcp_rx_len += bytes;
-
-        /* 帧解析循环 */
-        while (sdk->tcp_rx_len > 0) {
-            if (sdk->tcp_rx_buf[0] != SDK_FRAME_HDR1) {
-                sdk->tcp_rx_len--;
-                if (sdk->tcp_rx_len > 0)
-                    memmove(sdk->tcp_rx_buf, sdk->tcp_rx_buf + 1, sdk->tcp_rx_len);
-                continue;
-            }
-            if (sdk->tcp_rx_len < 2) break;
-            if (sdk->tcp_rx_buf[1] != SDK_FRAME_HDR2) {
-                sdk->tcp_rx_len--;
-                if (sdk->tcp_rx_len > 0)
-                    memmove(sdk->tcp_rx_buf, sdk->tcp_rx_buf + 1, sdk->tcp_rx_len);
-                continue;
-            }
-
-            /* 查找帧尾 \r\n */
-            int tail_pos = -1;
-            for (int i = 2; i + 1 < sdk->tcp_rx_len; i++) {
-                if (sdk->tcp_rx_buf[i] == 0x0D && sdk->tcp_rx_buf[i + 1] == 0x0A) {
-                    tail_pos = i;
-                    break;
-                }
-            }
-            if (tail_pos < 0) break;
-
-            int content_len = tail_pos - 2;
-            int total_len = tail_pos + 2;
-
-            if (content_len >= SDK_FRAME_OVERHEAD) {
-                int consumed = parse_frame(sdk, sdk->tcp_rx_buf + 2, content_len);
-                if (consumed <= 0) {
-                    sdk->err_count++;
-                    SDK_CALL(sdk, on_log, "Frame parse failed, re-syncing", LORA_SDK_LOG_TCP);
-                }
-            } else if (content_len > 0) {
-                sdk->err_count++;
-                SDK_CALL(sdk, on_log, "Frame content too short", LORA_SDK_LOG_TCP);
-            }
-
-            sdk->tcp_rx_len -= total_len;
-            if (sdk->tcp_rx_len > 0)
-                memmove(sdk->tcp_rx_buf, sdk->tcp_rx_buf + total_len, sdk->tcp_rx_len);
-        }
+    if (WSAEventSelect(sdk->tcp_sock, sock_event, FD_READ | FD_CLOSE) == SOCKET_ERROR) {
+        WSACloseEvent(sock_event);
+        return 1;
     }
+
+    while (InterlockedCompareExchange(&sdk->tcp_running, 1, 1)) {
+        /* 阻塞等待: 数据到达或 socket 关闭时立即唤醒, 无轮询开销 */
+        DWORD wait = WSAWaitForMultipleEvents(1, &sock_event, FALSE, WSA_INFINITE, FALSE);
+        if (wait != WSA_WAIT_EVENT_0) break;
+
+        /* 枚举并清除已触发的网络事件 */
+        WSANETWORKEVENTS ne;
+        if (WSAEnumNetworkEvents(sdk->tcp_sock, sock_event, &ne) == SOCKET_ERROR) break;
+
+        if (ne.lNetworkEvents & FD_READ) {
+            uint8_t buf[2048];
+            int bytes = recv(sdk->tcp_sock, (char *)buf, sizeof(buf), 0);
+            if (bytes == 0 || bytes == SOCKET_ERROR) break;
+
+            /* 缓冲区溢出保护 */
+            if (sdk->tcp_rx_len + bytes > SDK_RX_BUF_MAX) {
+                SDK_CALL(sdk, on_log, "RX buffer overflow, data dropped", LORA_SDK_LOG_TCP);
+                sdk->tcp_rx_len = 0;
+            }
+            memcpy(sdk->tcp_rx_buf + sdk->tcp_rx_len, buf, bytes);
+            sdk->tcp_rx_len += bytes;
+
+            /* 帧解析循环 */
+            while (sdk->tcp_rx_len > 0) {
+                if (sdk->tcp_rx_buf[0] != SDK_FRAME_HDR1) {
+                    sdk->tcp_rx_len--;
+                    if (sdk->tcp_rx_len > 0)
+                        memmove(sdk->tcp_rx_buf, sdk->tcp_rx_buf + 1, sdk->tcp_rx_len);
+                    continue;
+                }
+                if (sdk->tcp_rx_len < 2) break;
+                if (sdk->tcp_rx_buf[1] != SDK_FRAME_HDR2) {
+                    sdk->tcp_rx_len--;
+                    if (sdk->tcp_rx_len > 0)
+                        memmove(sdk->tcp_rx_buf, sdk->tcp_rx_buf + 1, sdk->tcp_rx_len);
+                    continue;
+                }
+
+                /* 查找帧尾 \r\n */
+                int tail_pos = -1;
+                for (int i = 2; i + 1 < sdk->tcp_rx_len; i++) {
+                    if (sdk->tcp_rx_buf[i] == 0x0D && sdk->tcp_rx_buf[i + 1] == 0x0A) {
+                        tail_pos = i;
+                        break;
+                    }
+                }
+                if (tail_pos < 0) break;
+
+                int content_len = tail_pos - 2;
+                int total_len = tail_pos + 2;
+
+                if (content_len >= SDK_FRAME_OVERHEAD) {
+                    int consumed = parse_frame(sdk, sdk->tcp_rx_buf + 2, content_len);
+                    if (consumed <= 0) {
+                        sdk->err_count++;
+                        SDK_CALL(sdk, on_log, "Frame parse failed, re-syncing", LORA_SDK_LOG_TCP);
+                    }
+                } else if (content_len > 0) {
+                    sdk->err_count++;
+                    SDK_CALL(sdk, on_log, "Frame content too short", LORA_SDK_LOG_TCP);
+                }
+
+                sdk->tcp_rx_len -= total_len;
+                if (sdk->tcp_rx_len > 0)
+                    memmove(sdk->tcp_rx_buf, sdk->tcp_rx_buf + total_len, sdk->tcp_rx_len);
+            }
+        }
+
+        if (ne.lNetworkEvents & FD_CLOSE) break;
+    }
+
+    WSACloseEvent(sock_event);
 
     /* 远端断开或错误退出 */
     if (InterlockedCompareExchange(&sdk->tcp_running, 1, 1)) {
@@ -145,54 +160,65 @@ static DWORD WINAPI tcp_recv_worker(LPVOID param)
 }
 
 /* ================================================================
- * Connect watcher thread — 替代 WSAAsyncSelect
+ * Connect watcher thread — WSAEventSelect FD_CONNECT
  * ================================================================ */
 
 static DWORD WINAPI connect_watcher(LPVOID param)
 {
     lora_sdk_t *sdk = (lora_sdk_t *)param;
 
-    for (int i = 0; i < 20; i++) {
-        fd_set write_fds;
-        FD_ZERO(&write_fds);
-        FD_SET(sdk->tcp_sock, &write_fds);
+    WSAEVENT conn_event = WSACreateEvent();
+    if (conn_event == WSA_INVALID_EVENT) {
+        closesocket(sdk->tcp_sock);
+        sdk->tcp_sock = INVALID_SOCKET;
+        InterlockedExchange(&sdk->connected, 0);
+        SDK_CALL(sdk, on_conn_state, LORA_SDK_CONN_DISCONNECTED);
+        return 0;
+    }
 
-        struct timeval tv = { 0, 500000 };
-        int sel = select(0, NULL, &write_fds, NULL, &tv);
+    /* 绑定 FD_CONNECT 事件, 单次 10 秒等待 */
+    if (WSAEventSelect(sdk->tcp_sock, conn_event, FD_CONNECT) == SOCKET_ERROR) {
+        WSACloseEvent(conn_event);
+        closesocket(sdk->tcp_sock);
+        sdk->tcp_sock = INVALID_SOCKET;
+        InterlockedExchange(&sdk->connected, 0);
+        SDK_CALL(sdk, on_conn_state, LORA_SDK_CONN_DISCONNECTED);
+        return 0;
+    }
 
-        if (sel == SOCKET_ERROR) {
-            SDK_CALL(sdk, on_log, "Connect failed (select error)", LORA_SDK_LOG_TCP);
+    DWORD wait = WSAWaitForMultipleEvents(1, &conn_event, FALSE, 10000, FALSE);
+    WSACloseEvent(conn_event);
+
+    if (wait == WSA_WAIT_EVENT_0) {
+        WSANETWORKEVENTS ne;
+        WSAEnumNetworkEvents(sdk->tcp_sock, NULL, &ne);
+
+        if (ne.iErrorCode[FD_CONNECT_BIT] == 0) {
+            /* 连接成功, 关闭事件绑定 (recv thread 会重新绑定) */
+            WSAEventSelect(sdk->tcp_sock, NULL, 0);
+            /* 恢复非阻塞模式 (WSAEventSelect 可能改变) */
+            u_long mode = 1;
+            ioctlsocket(sdk->tcp_sock, FIONBIO, &mode);
+
+            InterlockedExchange(&sdk->connected, 1);
+            sdk->tcp_rx_len = 0;
+            SDK_CALL(sdk, on_log, "Connected to gateway", LORA_SDK_LOG_TCP);
+            SDK_CALL(sdk, on_conn_state, LORA_SDK_CONN_CONNECTED);
+
+            InterlockedExchange(&sdk->tcp_running, 1);
+            sdk->tcp_recv_thread = CreateThread(NULL, 0, tcp_recv_worker,
+                                                 sdk, 0, NULL);
+        } else {
+            char buf[128];
+            snprintf(buf, sizeof(buf), "Connect failed (error %d)",
+                     ne.iErrorCode[FD_CONNECT_BIT]);
+            SDK_CALL(sdk, on_log, buf, LORA_SDK_LOG_TCP);
             closesocket(sdk->tcp_sock);
             sdk->tcp_sock = INVALID_SOCKET;
             InterlockedExchange(&sdk->connected, 0);
             SDK_CALL(sdk, on_conn_state, LORA_SDK_CONN_DISCONNECTED);
-            return 0;
         }
-
-        if (sel > 0 && FD_ISSET(sdk->tcp_sock, &write_fds)) {
-            int err = 0, errlen = sizeof(err);
-            getsockopt(sdk->tcp_sock, SOL_SOCKET, SO_ERROR, (char *)&err, &errlen);
-
-            if (err == 0) {
-                InterlockedExchange(&sdk->connected, 1);
-                sdk->tcp_rx_len = 0;
-                SDK_CALL(sdk, on_log, "Connected to gateway", LORA_SDK_LOG_TCP);
-                SDK_CALL(sdk, on_conn_state, LORA_SDK_CONN_CONNECTED);
-
-                InterlockedExchange(&sdk->tcp_running, 1);
-                sdk->tcp_recv_thread = CreateThread(NULL, 0, tcp_recv_worker,
-                                                     sdk, 0, NULL);
-            } else {
-                char buf[128];
-                snprintf(buf, sizeof(buf), "Connect failed (error %d)", err);
-                SDK_CALL(sdk, on_log, buf, LORA_SDK_LOG_TCP);
-                closesocket(sdk->tcp_sock);
-                sdk->tcp_sock = INVALID_SOCKET;
-                InterlockedExchange(&sdk->connected, 0);
-                SDK_CALL(sdk, on_conn_state, LORA_SDK_CONN_DISCONNECTED);
-            }
-            return 0;
-        }
+        return 0;
     }
 
     /* 超时 */
@@ -247,6 +273,7 @@ static void stop_recv_thread(lora_sdk_t *sdk)
 {
     if (!sdk->tcp_recv_thread) return;
     InterlockedExchange(&sdk->tcp_running, 0);
+    /* 关闭 socket 触发 FD_CLOSE, 唤醒 recv 线程退出 */
     if (sdk->tcp_sock != INVALID_SOCKET) {
         closesocket(sdk->tcp_sock);
         sdk->tcp_sock = INVALID_SOCKET;
