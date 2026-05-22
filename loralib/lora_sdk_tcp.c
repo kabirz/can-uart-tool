@@ -219,6 +219,10 @@ void sdk_tcp_connect(lora_sdk_t *sdk, const char *ip, int port)
     u_long mode = 1;
     ioctlsocket(sdk->tcp_sock, FIONBIO, &mode);
 
+    /* 禁用 Nagle 算法, 避免小包被缓冲等待 ACK (与延迟确认叠加可导致 200ms 延迟) */
+    int nodelay = 1;
+    setsockopt(sdk->tcp_sock, IPPROTO_TCP, TCP_NODELAY, (char *)&nodelay, sizeof(nodelay));
+
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
