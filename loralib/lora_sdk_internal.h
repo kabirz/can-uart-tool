@@ -131,4 +131,7 @@ void sdk_serial_send_at(lora_sdk_t *sdk, const char *cmd);
 void sdk_serial_query_device_info(lora_sdk_t *sdk);
 void sdk_serial_query_net_params(lora_sdk_t *sdk);
 
+/* lora_sdk_at.c */
+void sdk_at_reboot(lora_sdk_t *sdk);
+
 #endif /* LORA_SDK_INTERNAL_H */

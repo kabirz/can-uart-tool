@@ -1,6 +1,6 @@
 # LoRa Gateway SDK 使用指南
 
-**版本**: 1.1.0
+**版本**: 1.2.0
 **许可证**: Apache-2.0
 **平台**: Windows (Winsock2)
 **语言**: C99
@@ -17,6 +17,7 @@ LoRa Gateway SDK 提供 LoRa 网关（USR-LG210-L）的 TCP 数据流通信与 U
 | 设备发现 | UDP | 局域网广播搜索 USR-LG210-L 网关 |
 | 网络参数查询 | UDP | 获取网关 IP / 子网掩码 / 默认网关 |
 | AT 指令透传 | UDP / 串口 | 远程或本地配置 LoRa 模块参数（速率/信道/功率等） |
+| 网关重启 | UDP / 串口 | 发送 AT+Z 重启网关，自动处理 NV 保存延时和串口 AT 模式退出 |
 
 ### 线程模型
 
@@ -523,6 +524,19 @@ void lora_sdk_send_at(lora_sdk_t *sdk, const char *at_cmd);
 > **前置条件**：需先调用 `lora_sdk_search_devices()` 成功发现设备。
 > **超时**：5 秒内未收到响应触发日志 `"No response (timeout 5s)"`。
 
+#### `lora_sdk_reboot`
+
+```c
+void lora_sdk_reboot(lora_sdk_t *sdk);
+```
+
+重启网关设备。发送 `AT+Z` 指令，等待 2 秒 NV 保存后设备自动重启。
+
+- UDP 模式：通过 UDP 发送 AT+Z，设备重启后网络恢复
+- 串口模式：通过串口发送 AT+Z，设备重启后自动退出 AT 模式，SDK 清除 AT 模式标志（下次 AT 命令会重新握手）
+
+> **前置条件**：UDP 模式需先搜索设备；串口模式需先打开串口。
+
 ---
 
 ### 串口操作
@@ -781,6 +795,7 @@ Data 首字节为类型标识：
 | `AT+GWIP?` / `AT+GWIP=x.x.x.x` | 查询/设置 IP | — |
 | `AT+MASK?` / `AT+MASK=x.x.x.x` | 查询/设置子网掩码 | — |
 | `AT+GW?` / `AT+GW=x.x.x.x` | 查询/设置默认网关 | — |
+| `AT+Z` | 重启网关 (延时2s) | 响应: `+Z:OK` |
 
 > 完整 AT 指令集请参考 USR-LG210-L 协议说明书。
 
@@ -903,6 +918,14 @@ SDK 内部集成了以下库，客户无需额外获取：
 ---
 
 ## 更新日志
+
+### 1.2.0 — 网关重启功能
+
+**新增**
+- 网关重启 API `lora_sdk_reboot()`：发送 AT+Z 指令重启网关
+  - 自动等待 2 秒 NV 保存延时
+  - 串口模式下自动清除 AT 模式标志（设备重启后退出 AT 模式）
+  - 通过 `lora_sdk_at.c` 公共模块实现，UDP/串口双传输支持
 
 ### 1.1.0 — 串口 AT 传输支持
 

@@ -81,7 +81,7 @@ void sdk_at_dispatch_response(lora_sdk_t *sdk, const char *response,
  * ================================================================ */
 
 int sdk_at_launch_worker(LPTHREAD_START_ROUTINE worker,
-                          const void *work_data, size_t work_size)
+                           const void *work_data, size_t work_size)
 {
     void *work = calloc(1, work_size);
     if (!work)
@@ -90,4 +90,48 @@ int sdk_at_launch_worker(LPTHREAD_START_ROUTINE worker,
     memcpy(work, work_data, work_size);
     CloseHandle(CreateThread(NULL, 0, worker, work, 0, NULL));
     return 0;
+}
+
+/* ================================================================
+ * Gateway reboot (AT+Z)
+ * ================================================================ */
+
+typedef struct {
+    lora_sdk_t *sdk;
+    int         transport;
+} sdk_reboot_work_t;
+
+static DWORD WINAPI sdk_reboot_worker(LPVOID param)
+{
+    sdk_reboot_work_t *work = (sdk_reboot_work_t *)param;
+    lora_sdk_t *sdk = work->sdk;
+    int transport = work->transport;
+
+    SDK_CALL(sdk, on_log, "Sending AT+Z (gateway reboot)...",
+             transport == LORA_SDK_AT_TRANSPORT_SERIAL
+                 ? LORA_SDK_LOG_SERIAL : LORA_SDK_LOG_UDP);
+
+    if (transport == LORA_SDK_AT_TRANSPORT_SERIAL)
+        sdk_serial_send_at(sdk, "AT+Z");
+    else
+        sdk_udp_send_at(sdk, "AT+Z");
+
+    Sleep(2000);
+
+    if (transport == LORA_SDK_AT_TRANSPORT_SERIAL) {
+        sdk->serial_at_mode = 0;
+        SDK_CALL(sdk, on_log, "Gateway rebooted, serial AT mode exited",
+                 LORA_SDK_LOG_SERIAL);
+    }
+
+    free(work);
+    return 0;
+}
+
+void sdk_at_reboot(lora_sdk_t *sdk)
+{
+    if (!sdk) return;
+
+    sdk_reboot_work_t work = { sdk, sdk->at_transport };
+    sdk_at_launch_worker(sdk_reboot_worker, &work, sizeof(work));
 }

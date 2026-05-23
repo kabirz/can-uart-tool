@@ -5,7 +5,7 @@
 ## 功能
 
 - **LoRa 数据** — TCP 网关连接，遥测数据实时显示 (X/Y 角度/按键)，测试帧回显与延迟记录，RSSI 查询，历史列表，CSV 导出
-- **LoRa 配置** — UDP/串口双传输方式，设备搜索，网络参数管理 (IP/掩码/网关/DHCP/SOCKA)，LoRa 协议配置 (组网/透传模式/通道/频率/速率/功率)，AT 命令控制台
+- **LoRa 配置** — UDP/串口双传输方式，设备搜索，网关重启，网络参数管理 (IP/掩码/网关/DHCP/SOCKA)，LoRa 协议配置 (组网/透传模式/通道/频率/速率/功率)，AT 命令控制台
 - **固件升级** — CAN (PCAN/IXXAT) 或 UART 双通道固件烧录，适配器热切换，进度显示，版本查询/板卡重启
 - **CAN 命令** — 自定义 CAN 帧发送 (标准帧/扩展帧/数据帧/远程帧)，总线监视器 (帧 ID 自动标注)，LoRa 远程配参 (协议/模式/通道/NID/GWID/上电/测试模式)
 
@@ -41,7 +41,7 @@ can-uart-tool/
 │   ├── lora_sdk_tcp.c      # TCP 数据流收发 (WSAEventSelect 事件驱动)
 │   ├── lora_sdk_udp.c      # UDP 设备搜索与 AT 指令
 │   ├── lora_sdk_serial.c   # 串口 AT 指令传输 (COM 口直连)
-│   ├── lora_sdk_at.c       # AT 命令公共模块 (CRLF/查询检测/worker 封装)
+│   ├── lora_sdk_at.c       # AT 命令公共模块 (CRLF/查询检测/worker 封装/网关重启)
 │   ├── cJSON.h/cJSON.c     # JSON 解析 (UDP 响应)
 │   ├── crc16.h/crc16.c     # CRC16-CCITT 帧校验
 │   └── lora_sdk_example.c  # SDK 独立示例程序
@@ -92,7 +92,7 @@ cmake --build build --config Release
 1. 连接 PCAN USB 适配器、IXXAT USB-to-CAN 适配器或 LoRa 网关
 2. 运行 `modhandler-pc-tool.exe`
 3. **LoRa 数据页**: 输入网关 IP/端口并连接，实时查看遥测数据
-4. **LoRa 配置页**: 搜索网关设备或打开串口，配置网络和 LoRa 参数
+4. **LoRa 配置页**: 搜索网关设备或打开串口，配置网络和 LoRa 参数，重启网关
 5. **固件升级页**: 选择通道/适配器/波特率并连接，选择固件文件开始升级
 6. **CAN 命令页**: 连接 CAN 后发送自定义帧、监视总线、配置 LoRa 参数
 

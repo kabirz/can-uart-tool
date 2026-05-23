@@ -237,6 +237,10 @@ LORA_SDK_API void lora_sdk_search_devices(lora_sdk_t *sdk);
 LORA_SDK_API void lora_sdk_get_net_params(lora_sdk_t *sdk);
 LORA_SDK_API void lora_sdk_send_at(lora_sdk_t *sdk, const char *at_cmd);
 
+/* Reboot gateway (sends AT+Z, waits 2s for NV save).
+ * For serial transport, automatically clears AT mode flag. */
+LORA_SDK_API void lora_sdk_reboot(lora_sdk_t *sdk);
+
 /* Query gateway RSSI via UDP and send response back to 'nid' via TCP */
 LORA_SDK_API void lora_sdk_query_rssi(lora_sdk_t *sdk, uint32_t nid);
 

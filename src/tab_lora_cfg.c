@@ -95,6 +95,7 @@ typedef struct {
     HWND hEditAtCmd;
     HWND hBtnAtSend;
     HWND hBtnQueryVer;
+    HWND hBtnReboot;
 
     /* Group 5: Log */
     HWND hLogEdit;
@@ -713,6 +714,9 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         ox += 116;
         pData->hBtnQueryCsq = CreateBtn(hwnd, hInst, IDC_CFG_QUERY_CSQ,
             ox, cy, 110, btnH, L"查询信号", pData->hFont);
+        ox += 116;
+        pData->hBtnReboot = CreateBtn(hwnd, hInst, IDC_CFG_REBOOT,
+            ox, cy, 110, btnH, L"重启网关", pData->hFont);
         cy += lineH;
 
         /* Row 2: All info in one line */
@@ -1323,6 +1327,11 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
 
         case IDC_CFG_QUERY_VER:
             SendAtCmd(pData, "AT+VER?");
+            return 0;
+
+        case IDC_CFG_REBOOT:
+            if (pData->sdk)
+                lora_sdk_reboot(pData->sdk);
             return 0;
 
         /* ---- Group 5: Log ---- */

@@ -56,4 +56,8 @@ void sdk_at_dispatch_response(struct lora_sdk *sdk, const char *response,
 int sdk_at_launch_worker(LPTHREAD_START_ROUTINE worker,
                           const void *work_data, size_t work_size);
 
+/* Send AT+Z to reboot gateway. Handles 2s NV-save delay.
+ * For serial transport, clears AT mode flag after reboot. */
+void sdk_at_reboot(lora_sdk_t *sdk);
+
 #endif /* LORA_SDK_AT_H */

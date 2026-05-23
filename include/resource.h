@@ -156,6 +156,8 @@
 #define IDC_CFG_SOCKA_SET               1464
 #define IDC_CFG_SOCKA_QUERY             1465
 
+#define IDC_CFG_REBOOT                  1466
+
 // Transport & serial controls
 #define IDC_CFG_TRANSPORT_COMBO         1470
 #define IDC_CFG_COMPORT_COMBO           1471
