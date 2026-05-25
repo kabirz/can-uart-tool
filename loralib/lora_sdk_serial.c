@@ -137,10 +137,10 @@ static int serial_enter_at_mode(lora_sdk_t *sdk)
     }
 
     n = serial_read_response(sdk, rbuf, sizeof(rbuf), SERIAL_HANDSHAKE_TO_MS);
-    if (n <= 0 || !strstr(rbuf, "+OK")) {
+    if (n <= 0 || !strstr(rbuf, "+ok")) {
         char msg[128];
         snprintf(msg, sizeof(msg),
-                 "AT mode handshake failed: expected '+OK', got '%.*s'", n, rbuf);
+                 "AT mode handshake failed: expected '+ok', got '%.*s'", n, rbuf);
         SDK_CALL(sdk, on_error, msg, LORA_SDK_LOG_SERIAL);
         return -1;
     }

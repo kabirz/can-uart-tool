@@ -108,6 +108,9 @@ typedef struct {
     HWND hEditSockaLPort;
     HWND hBtnSockaSet;
     HWND hBtnSockaQuery;
+    HWND hComboSocka;
+    HWND hBtnSockenSet;
+    HWND hBtnSockenQuery;
 
     /* Resizable group boxes */
     HWND hGrpDev;
@@ -463,6 +466,21 @@ static void ParseAtResponse(TAB_LORA_CFG *pData, const char *resp)
             }
         }
     }
+
+    /* +SOCKEN:<status>,<status> */
+    {
+        const char *sp = strstr(resp, "+SOCKEN:");
+        if (sp) {
+            sp += 8;
+            char sa[8] = {0};
+            if (sscanf(sp, "%7[^,]", sa) >= 1) {
+                if (strcmp(sa, "ON") == 0)
+                    SendMessageW(pData->hComboSocka, CB_SETCURSEL, 0, 0);
+                else
+                    SendMessageW(pData->hComboSocka, CB_SETCURSEL, 1, 0);
+            }
+        }
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -744,7 +762,7 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         /* ========== Group 2: Network Settings ========== */
         int grp2Y = grp1Y + grp1H + 6;
         int grp2W = pageW - 2 * margin;
-        int grp2H = 174;
+        int grp2H = 208;
         pData->hGrpNet = CreateWindowExW(0, L"BUTTON", L"网络设置",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             margin, grp2Y, grp2W, grp2H, hwnd, NULL, hInst, NULL);
@@ -823,7 +841,26 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
             ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
         cy += lineH;
 
-        /* Row 4: SOCKA — mode + IP + remote port + local port + buttons */
+        /* Row 4: SOCKEN — SocketA enable */
+        ox = cx;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 4, 88, 20, L"SOCKEN:", pData->hFont);
+        ox += 92;
+        CreateLabel(hwnd, hInst, -1, ox, cy + 4, 60, 20, L"A:", pData->hFont);
+        ox += 28;
+        pData->hComboSocka = CreateCombo(hwnd, hInst, IDC_CFG_SOCKA_COMBO,
+            ox, cy, 72, 200, pData->hFont);
+        SendMessageW(pData->hComboSocka, CB_ADDSTRING, 0, (LPARAM)L"ON");
+        SendMessageW(pData->hComboSocka, CB_ADDSTRING, 0, (LPARAM)L"OFF");
+        SendMessageW(pData->hComboSocka, CB_SETCURSEL, 0, 0);
+        ox += 78;
+        pData->hBtnSockenSet = CreateBtn(hwnd, hInst, IDC_CFG_SOCKEN_SET,
+            ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
+        ox += smallBtnW + 6;
+        pData->hBtnSockenQuery = CreateBtn(hwnd, hInst, IDC_CFG_SOCKEN_QUERY,
+            ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
+        cy += lineH;
+
+        /* Row 5: SOCKA — mode + IP + remote port + local port + buttons */
         ox = cx;
         CreateLabel(hwnd, hInst, -1, ox, cy + 4, 72, 20, L"SOCKA:", pData->hFont);
         ox += 76;
@@ -1313,6 +1350,19 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
             SendAtCmd(pData, "AT+SOCKA?");
             return 0;
 
+        case IDC_CFG_SOCKEN_SET: {
+            int aOn = (int)SendMessageW(pData->hComboSocka, CB_GETCURSEL, 0, 0);
+            char cmd[64];
+            snprintf(cmd, sizeof(cmd), "AT+SOCKEN=%s,OFF",
+                     aOn == 0 ? "ON" : "OFF");
+            SendAtCmd(pData, cmd);
+            return 0;
+        }
+
+        case IDC_CFG_SOCKEN_QUERY:
+            SendAtCmd(pData, "AT+SOCKEN?");
+            return 0;
+
         /* ---- Group 4: AT command ---- */
         case IDC_CFG_SEND_BTN: {
             wchar_t wbuf[256];
@@ -1426,7 +1476,7 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         int margin = 14;
         int grp0H = 62;    /* Transport */
         int grp1H = 94;
-        int grp2H = 174;   /* Network + SOCKA */
+        int grp2H = 208;   /* Network + SOCKA + SOCKEN */
         int grp3H = 130;
         int grp4H = 56;    /* AT command */
 

@@ -155,8 +155,11 @@
 #define IDC_CFG_SOCKA_LPORT_EDIT        1463
 #define IDC_CFG_SOCKA_SET               1464
 #define IDC_CFG_SOCKA_QUERY             1465
+#define IDC_CFG_SOCKA_COMBO             1466
+#define IDC_CFG_SOCKEN_SET              1468
+#define IDC_CFG_SOCKEN_QUERY            1469
 
-#define IDC_CFG_REBOOT                  1466
+
 
 // Transport & serial controls
 #define IDC_CFG_TRANSPORT_COMBO         1470
@@ -165,6 +168,7 @@
 #define IDC_CFG_SERIAL_OPEN_BTN         1473
 #define IDC_CFG_SERIAL_STATUS           1474
 #define IDC_CFG_SERIAL_REFRESH_BTN      1475
+#define IDC_CFG_REBOOT                  1476
 
 // Custom messages
 #define WM_UPDATE_PROGRESS              (WM_APP + 1)
