@@ -23,6 +23,7 @@
 can-uart-tool/
 ├── src/
 │   ├── main.c              # 主窗口，Tab 控件，消息分发，全局对象管理
+│   ├── tab_base.c           # Tab 基础框架 (统一 WndProc + vtable 生命周期 + SetWindowTheme)
 │   ├── can_hal.c           # CAN 硬件抽象层 (适配器注册/帧收发/设备检测)
 │   ├── can_hal_pcan.c      # PCAN-Basic 适配器实现 (动态加载 PCANBasic.dll)
 │   ├── can_hal_ixxat.c     # IXXAT VCI 适配器实现 (动态加载 vcinpl.dll)
@@ -47,6 +48,7 @@ can-uart-tool/
 │   └── lora_sdk_example.c  # SDK 独立示例程序
 ├── include/
 │   ├── resource.h           # 资源 ID、布局常量、字体定义、自定义消息
+│   ├── tab_base.h           # Tab 基础框架接口 (TAB_BASE, TAB_IFACE, TAB_MSG_*)
 │   ├── can_hal.h            # CAN HAL 抽象接口 (CanHalOps 虚表)
 │   ├── can_manager.h        # CAN 管理器接口
 │   ├── can_dispatcher.h     # CAN 帧分发器接口
