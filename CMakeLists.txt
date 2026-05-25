@@ -5,6 +5,7 @@ add_compile_definitions(UNICODE _UNICODE)
 
 set(SOURCES
     src/main.c
+    src/tab_base.c
     src/can_hal.c
     src/can_hal_pcan.c
     src/can_hal_ixxat.c

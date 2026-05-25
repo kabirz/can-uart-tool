@@ -13,6 +13,7 @@
 #include <string.h>
 #include "resource.h"
 #include "lora_sdk.h"
+#include "tab_base.h"
 
 /* ------------------------------------------------------------------ */
 /*  Data types for marshaling from SDK callbacks to UI thread          */
@@ -59,6 +60,7 @@ typedef struct {
 /*  Per-window instance data (stored via GWLP_USERDATA)                */
 /* ------------------------------------------------------------------ */
 typedef struct {
+    TAB_BASE base;          /* MUST be first member */
     lora_sdk_t *sdk;
 
     /* Connection group */
@@ -110,20 +112,11 @@ typedef struct {
     CsvTestEntry csvEntries[MAX_CSV_ENTRIES];
     int csvCount;
 
-    /* Fonts */
-    HFONT hFont;
-    HFONT hFontBold;
-    HFONT hFontMono;
 } TAB_LORA_DATA;
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
 /* ------------------------------------------------------------------ */
-static TAB_LORA_DATA *GetTabPageData(HWND hwnd)
-{
-    return (TAB_LORA_DATA *)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
-}
-
 /* Create a static label */
 static HWND CreateLabel(HWND hParent, HINSTANCE hInst, int id,
                          int x, int y, int w, int h,
@@ -249,298 +242,321 @@ static void UpdateCounters(TAB_LORA_DATA *pData)
 }
 
 /* ------------------------------------------------------------------ */
-/*  WndProc for the tab page                                          */
+/*  Tab Base Framework Hooks                                         */
 /* ------------------------------------------------------------------ */
-static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
-                                             WPARAM wParam, LPARAM lParam)
+
+static void lora_data_on_create(HWND hwnd, void *data, CREATESTRUCTW *cs)
 {
-    TAB_LORA_DATA *pData = (TAB_LORA_DATA *)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+    TAB_LORA_DATA *pData = (TAB_LORA_DATA *)data;
+    HINSTANCE hInst = cs->hInstance;
+
+    pData->sdk = (lora_sdk_t *)cs->lpCreateParams;
+    pData->rxCount = 0;
+    pData->txCount = 0;
+    pData->errCount = 0;
+    pData->testMode = 0;
+    pData->csvCount = 0;
+
+    /* Get actual client area */
+    RECT rcClient;
+    GetClientRect(hwnd, &rcClient);
+    int pageW = rcClient.right  > 0 ? rcClient.right  : WINDOW_WIDTH;
+    int pageH = rcClient.bottom > 0 ? rcClient.bottom : WINDOW_HEIGHT;
+
+    int margin = 14;
+    int lineH = 36;
+    int cx, cy;
+
+    /* ========== Group 1: Connection (top, full width, ~80px) ========== */
+    int grp1X = margin, grp1Y = margin;
+    int grp1W = pageW - 2 * margin;
+    int grp1H = 70;
+    pData->hGrpConn = CreateWindowExW(0, L"BUTTON", L"连接",
+        WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+        grp1X, grp1Y, grp1W, grp1H, hwnd, NULL, hInst, NULL);
+
+    pData->hLabelIp = CreateLabel(hwnd, hInst, -1, 0, 0, 28, 22, L"IP:", pData->base.hFont);
+    pData->hEditIp = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT",
+        L"192.168.2.100",
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        0, 0, 160, 24, hwnd, (HMENU)IDC_LORA_IP_EDIT, hInst, NULL);
+    SendMessageW(pData->hEditIp, WM_SETFONT, (WPARAM)pData->base.hFontMono, TRUE);
+
+    pData->hLabelPort = CreateLabel(hwnd, hInst, -1, 0, 0, 44, 22, L"端口:", pData->base.hFont);
+    pData->hEditPort = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT",
+        L"1234",
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        0, 0, 70, 24, hwnd, (HMENU)IDC_LORA_PORT_EDIT, hInst, NULL);
+    SendMessageW(pData->hEditPort, WM_SETFONT, (WPARAM)pData->base.hFontMono, TRUE);
+
+    pData->hBtnConnect = CreateWindowExW(0, L"BUTTON", L"连接",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        0, 0, 100, 26,
+        hwnd, (HMENU)IDC_LORA_CONNECT_BTN, hInst, NULL);
+    SendMessageW(pData->hBtnConnect, WM_SETFONT, (WPARAM)pData->base.hFontBold, TRUE);
+
+    pData->hLabelNid = CreateLabel(hwnd, hInst, -1, 0, 0, 38, 22, L"NID:", pData->base.hFont);
+    pData->hNidText = CreateWindowExW(0, L"STATIC", L"00000000",
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        0, 0, 100, 22,
+        hwnd, (HMENU)IDC_LORA_NID_TEXT, hInst, NULL);
+    SendMessageW(pData->hNidText, WM_SETFONT, (WPARAM)pData->base.hFontMono, TRUE);
+
+    pData->hTestCheck = CreateWindowExW(0, L"BUTTON", L"测试模式",
+        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        0, 0, 110, 24,
+        hwnd, (HMENU)IDC_LORA_TEST_CHECK, hInst, NULL);
+    SendMessageW(pData->hTestCheck, WM_SETFONT, (WPARAM)pData->base.hFont, TRUE);
+
+    LayoutConnControls(pData, grp1X, grp1W, grp1Y, grp1H);
+
+    /* ========== Group 2: Middle (split left/right) ========== */
+    int grp2Y = grp1Y + grp1H + 8;
+    int grp2H = 180;
+
+    /* Left: Telemetry (fixed width ~280px) */
+    int teleW = 280;
+    pData->hGrpTelemetry = CreateWindowExW(0, L"BUTTON", L"手柄数据",
+        WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+        margin, grp2Y, teleW, grp2H, hwnd, NULL, hInst, NULL);
+
+    cx = margin + 14;
+    cy = grp2Y + 28;
+
+    /* X angle */
+    CreateLabel(hwnd, hInst, -1, cx, cy + 3, 80, 22, L"X角度:", pData->base.hFont);
+    pData->hXText = CreateWindowExW(0, L"STATIC", L"--",
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        cx + 84, cy + 3, 120, 22,
+        hwnd, (HMENU)IDC_LORA_X_TEXT, hInst, NULL);
+    SendMessageW(pData->hXText, WM_SETFONT, (WPARAM)pData->base.hFontMono, TRUE);
+    cy += lineH;
+
+    /* Y angle */
+    CreateLabel(hwnd, hInst, -1, cx, cy + 3, 80, 22, L"Y角度:", pData->base.hFont);
+    pData->hYText = CreateWindowExW(0, L"STATIC", L"--",
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        cx + 84, cy + 3, 120, 22,
+        hwnd, (HMENU)IDC_LORA_Y_TEXT, hInst, NULL);
+    SendMessageW(pData->hYText, WM_SETFONT, (WPARAM)pData->base.hFontMono, TRUE);
+    cy += lineH;
+
+    /* Button state */
+    CreateLabel(hwnd, hInst, -1, cx, cy + 3, 80, 22, L"按键状态:", pData->base.hFont);
+    pData->hBtnText = CreateWindowExW(0, L"STATIC", L"--",
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        cx + 84, cy + 3, 120, 22,
+        hwnd, (HMENU)IDC_LORA_BTN_TEXT, hInst, NULL);
+    SendMessageW(pData->hBtnText, WM_SETFONT, (WPARAM)pData->base.hFontMono, TRUE);
+    cy += lineH;
+
+    /* Counters */
+    pData->hRxCount = CreateWindowExW(0, L"STATIC", L"RX: 0",
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        cx, cy + 3, 80, 22,
+        hwnd, (HMENU)IDC_LORA_RX_COUNT, hInst, NULL);
+    SendMessageW(pData->hRxCount, WM_SETFONT, (WPARAM)pData->base.hFontMono, TRUE);
+
+    pData->hTxCount = CreateWindowExW(0, L"STATIC", L"TX: 0",
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        cx + 80, cy + 3, 80, 22,
+        hwnd, (HMENU)IDC_LORA_TX_COUNT, hInst, NULL);
+    SendMessageW(pData->hTxCount, WM_SETFONT, (WPARAM)pData->base.hFontMono, TRUE);
+
+    pData->hErrCount = CreateWindowExW(0, L"STATIC", L"ERR: 0",
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        cx + 160, cy + 3, 80, 22,
+        hwnd, (HMENU)IDC_LORA_ERR_COUNT, hInst, NULL);
+    SendMessageW(pData->hErrCount, WM_SETFONT, (WPARAM)pData->base.hFontMono, TRUE);
+
+    /* Right: Raw log (stretch width) */
+    int logX = margin + teleW + 8;
+    int logW = pageW - margin - logX - margin;
+    if (logW < 200) logW = 200;
+    pData->hGrpLog = CreateWindowExW(0, L"BUTTON", L"原始日志",
+        WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+        logX, grp2Y, logW, grp2H, hwnd, NULL, hInst, NULL);
+
+    int logEditX = logX + 10;
+    int logEditY = grp2Y + 24;
+    int logEditW = logW - 20;
+    int logEditH = grp2H - 34;
+    if (logEditW < 50) logEditW = 50;
+    if (logEditH < 50) logEditH = 50;
+    pData->hLogEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL |
+        ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
+        logEditX, logEditY, logEditW, logEditH,
+        hwnd, (HMENU)IDC_LORA_LOG_EDIT, hInst, NULL);
+    SendMessageW(pData->hLogEdit, WM_SETFONT, (WPARAM)pData->base.hFontMono, TRUE);
+    SendMessageW(pData->hLogEdit, EM_LIMITTEXT, 0x7FFFFFFE, 0);
+
+    /* ========== Group 3: Operations (full width, ~40px) ========== */
+    int grp3Y = grp2Y + grp2H + 8;
+    int grp3H = 50;
+    int grp3W = pageW - 2 * margin;
+    pData->hGrpOps = CreateWindowExW(0, L"BUTTON", L"操作",
+        WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+        margin, grp3Y, grp3W, grp3H, hwnd, NULL, hInst, NULL);
+
+    cx = margin + 14;
+    cy = grp3Y + 18;
+
+    pData->hSendEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        cx, cy, 400, 24,
+        hwnd, (HMENU)IDC_LORA_SEND_EDIT, hInst, NULL);
+    SendMessageW(pData->hSendEdit, WM_SETFONT, (WPARAM)pData->base.hFontMono, TRUE);
+
+    int ox = cx + 408;
+    pData->hBtnSend = CreateWindowExW(0, L"BUTTON", L"发送",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        ox, cy, 80, 26,
+        hwnd, (HMENU)IDC_LORA_SEND_BTN, hInst, NULL);
+    SendMessageW(pData->hBtnSend, WM_SETFONT, (WPARAM)pData->base.hFontBold, TRUE);
+
+    ox += 86;
+    pData->hBtnSaveCsv = CreateWindowExW(0, L"BUTTON", L"保存CSV",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        ox, cy, 90, 26,
+        hwnd, (HMENU)IDC_LORA_SAVE_CSV_BTN, hInst, NULL);
+    SendMessageW(pData->hBtnSaveCsv, WM_SETFONT, (WPARAM)pData->base.hFont, TRUE);
+
+    ox += 96;
+    pData->hBtnClear = CreateWindowExW(0, L"BUTTON", L"清除",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        ox, cy, 80, 26,
+        hwnd, (HMENU)IDC_LORA_CLEAR_BTN, hInst, NULL);
+    SendMessageW(pData->hBtnClear, WM_SETFONT, (WPARAM)pData->base.hFont, TRUE);
+
+    /* ========== Group 4: History ListView (bottom, stretch height) ========== */
+    int grp4Y = grp3Y + grp3H + 8;
+    int grp4H = pageH - grp4Y - margin;
+    if (grp4H < 100) grp4H = 100;
+    int grp4W = pageW - 2 * margin;
+    pData->hGrpHistory = CreateWindowExW(0, L"BUTTON", L"历史记录",
+        WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+        margin, grp4Y, grp4W, grp4H, hwnd, NULL, hInst, NULL);
+
+    int listX = margin + 10;
+    int listY = grp4Y + 24;
+    int listW = grp4W - 20;
+    int listH = grp4H - 34;
+    if (listW < 100) listW = 100;
+    if (listH < 50) listH = 50;
+
+    pData->hHistoryList = CreateWindowExW(
+        WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
+        WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | WS_VSCROLL,
+        listX, listY, listW, listH,
+        hwnd, (HMENU)IDC_LORA_HISTORY_LIST, hInst, NULL);
+    SendMessageW(pData->hHistoryList, WM_SETFONT, (WPARAM)pData->base.hFont, TRUE);
+
+    /* Enable full-row select and grid lines */
+    SendMessageW(pData->hHistoryList, LVM_SETEXTENDEDLISTVIEWSTYLE,
+                 LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES,
+                 LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
+
+    /* Add columns */
+    LVCOLUMNW lvc = {0};
+    lvc.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_FMT;
+    lvc.fmt  = LVCFMT_LEFT;
+
+    lvc.pszText = L"时间";
+    lvc.cx = 140;
+    SendMessageW(pData->hHistoryList, LVM_INSERTCOLUMNW, 0, (LPARAM)&lvc);
+
+    lvc.pszText = L"NID";
+    lvc.cx = 100;
+    SendMessageW(pData->hHistoryList, LVM_INSERTCOLUMNW, 1, (LPARAM)&lvc);
+
+    lvc.pszText = L"类型";
+    lvc.cx = 80;
+    SendMessageW(pData->hHistoryList, LVM_INSERTCOLUMNW, 2, (LPARAM)&lvc);
+
+    lvc.pszText = L"数据";
+    lvc.cx = 200;
+    SendMessageW(pData->hHistoryList, LVM_INSERTCOLUMNW, 3, (LPARAM)&lvc);
+
+    RECT rcList0;
+    GetClientRect(pData->hHistoryList, &rcList0);
+    int cw0 = rcList0.right - rcList0.left;
+    int dw0 = cw0 - 320;
+    if (dw0 < 100) dw0 = 100;
+    SendMessageW(pData->hHistoryList, LVM_SETCOLUMNWIDTH, 3, dw0);
+}
+static void lora_data_on_size(HWND hwnd, void *data, int cx, int cy)
+{
+    TAB_LORA_DATA *pData = (TAB_LORA_DATA *)data;
+
+    int margin = 14;
+    int grp1H = 70;
+    int grp2H = 180;
+    int grp3H = 50;
+
+    int grp1W = cx - 2 * margin;
+    MoveWindow(pData->hGrpConn, margin, margin, grp1W, grp1H, TRUE);
+    LayoutConnControls(pData, margin, grp1W, margin, grp1H);
+
+    /* Group 2: Middle split */
+    int grp2Y = margin + grp1H + 8;
+    int teleW = 280;
+    int logW = cx - margin - (margin + teleW + 8) - margin;
+    if (logW < 200) logW = 200;
+
+    MoveWindow(pData->hGrpTelemetry, margin, grp2Y, teleW, grp2H, TRUE);
+    MoveWindow(pData->hGrpLog, margin + teleW + 8, grp2Y, logW, grp2H, TRUE);
+
+    /* Resize log edit */
+    int logEditX = margin + teleW + 8 + 10;
+    int logEditY = grp2Y + 24;
+    int logEditW = logW - 20;
+    int logEditH = grp2H - 34;
+    if (logEditW < 50) logEditW = 50;
+    if (logEditH < 50) logEditH = 50;
+    MoveWindow(pData->hLogEdit, logEditX, logEditY, logEditW, logEditH, TRUE);
+
+    /* Group 3: Operations */
+    int grp3Y = grp2Y + grp2H + 8;
+    int grp3W = cx - 2 * margin;
+    MoveWindow(pData->hGrpOps, margin, grp3Y, grp3W, grp3H, TRUE);
+
+    /* Group 4: History - stretch height */
+    int grp4Y = grp3Y + grp3H + 8;
+    int grp4H = cy - grp4Y - margin;
+    if (grp4H < 100) grp4H = 100;
+    int grp4W = cx - 2 * margin;
+    MoveWindow(pData->hGrpHistory, margin, grp4Y, grp4W, grp4H, TRUE);
+
+    /* Resize history list view */
+    int listX = margin + 10;
+    int listY = grp4Y + 24;
+    int listW = grp4W - 20;
+    int listH = grp4H - 34;
+    if (listW < 100) listW = 100;
+    if (listH < 50) listH = 50;
+    MoveWindow(pData->hHistoryList, listX, listY, listW, listH, TRUE);
+
+    RECT rcList;
+    GetClientRect(pData->hHistoryList, &rcList);
+    int clientW = rcList.right - rcList.left;
+    int dataColW = clientW - 320;
+    if (dataColW < 100) dataColW = 100;
+    SendMessageW(pData->hHistoryList, LVM_SETCOLUMNWIDTH, 3, dataColW);
+}
+
+static void lora_data_on_destroy(HWND hwnd, void *data)
+{
+    (void)hwnd;
+    (void)data;
+    /* No special cleanup; framework handles font deletion and free */
+}
+static LRESULT lora_data_on_message(HWND hwnd, void *data, UINT uMsg,
+                                     WPARAM wParam, LPARAM lParam)
+{
+    TAB_LORA_DATA *pData = (TAB_LORA_DATA *)data;
 
     switch (uMsg) {
-
-    /* ---- Creation ---- */
-    case WM_NCCREATE: {
-        pData = (TAB_LORA_DATA *)calloc(1, sizeof(TAB_LORA_DATA));
-        if (!pData) return FALSE;
-        SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)pData);
-        return TRUE;
-    }
-
-    case WM_CREATE: {
-        CREATESTRUCTW *cs = (CREATESTRUCTW *)lParam;
-        HINSTANCE hInst = cs->hInstance;
-
-        pData->sdk = (lora_sdk_t *)cs->lpCreateParams;
-        pData->rxCount = 0;
-        pData->txCount = 0;
-        pData->errCount = 0;
-        pData->testMode = 0;
-        pData->csvCount = 0;
-
-        /* Get actual client area */
-        RECT rcClient;
-        GetClientRect(hwnd, &rcClient);
-        int pageW = rcClient.right  > 0 ? rcClient.right  : WINDOW_WIDTH;
-        int pageH = rcClient.bottom > 0 ? rcClient.bottom : WINDOW_HEIGHT;
-
-        /* Create fonts */
-        pData->hFont = CreateFontW(
-            FONT_SIZE_UI, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
-            FONT_FACE_UI);
-        pData->hFontBold = CreateFontW(
-            FONT_SIZE_UI, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
-            FONT_FACE_UI);
-        pData->hFontMono = CreateFontW(
-            FONT_SIZE_MONO, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN,
-            FONT_FACE_MONO);
-
-        int margin = 14;
-        int lineH = 36;
-        int cx, cy;
-
-        /* ========== Group 1: Connection (top, full width, ~80px) ========== */
-        int grp1X = margin, grp1Y = margin;
-        int grp1W = pageW - 2 * margin;
-        int grp1H = 70;
-        pData->hGrpConn = CreateWindowExW(0, L"BUTTON", L"连接",
-            WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
-            grp1X, grp1Y, grp1W, grp1H, hwnd, NULL, hInst, NULL);
-
-        pData->hLabelIp = CreateLabel(hwnd, hInst, -1, 0, 0, 28, 22, L"IP:", pData->hFont);
-        pData->hEditIp = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT",
-            L"192.168.2.100",
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-            0, 0, 160, 24, hwnd, (HMENU)IDC_LORA_IP_EDIT, hInst, NULL);
-        SendMessageW(pData->hEditIp, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
-
-        pData->hLabelPort = CreateLabel(hwnd, hInst, -1, 0, 0, 44, 22, L"端口:", pData->hFont);
-        pData->hEditPort = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT",
-            L"1234",
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-            0, 0, 70, 24, hwnd, (HMENU)IDC_LORA_PORT_EDIT, hInst, NULL);
-        SendMessageW(pData->hEditPort, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
-
-        pData->hBtnConnect = CreateWindowExW(0, L"BUTTON", L"连接",
-            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            0, 0, 100, 26,
-            hwnd, (HMENU)IDC_LORA_CONNECT_BTN, hInst, NULL);
-        SendMessageW(pData->hBtnConnect, WM_SETFONT, (WPARAM)pData->hFontBold, TRUE);
-
-        pData->hLabelNid = CreateLabel(hwnd, hInst, -1, 0, 0, 38, 22, L"NID:", pData->hFont);
-        pData->hNidText = CreateWindowExW(0, L"STATIC", L"00000000",
-            WS_CHILD | WS_VISIBLE | SS_LEFT,
-            0, 0, 100, 22,
-            hwnd, (HMENU)IDC_LORA_NID_TEXT, hInst, NULL);
-        SendMessageW(pData->hNidText, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
-
-        pData->hTestCheck = CreateWindowExW(0, L"BUTTON", L"测试模式",
-            WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-            0, 0, 110, 24,
-            hwnd, (HMENU)IDC_LORA_TEST_CHECK, hInst, NULL);
-        SendMessageW(pData->hTestCheck, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
-
-        LayoutConnControls(pData, grp1X, grp1W, grp1Y, grp1H);
-
-        /* ========== Group 2: Middle (split left/right) ========== */
-        int grp2Y = grp1Y + grp1H + 8;
-        int grp2H = 180;
-
-        /* Left: Telemetry (fixed width ~280px) */
-        int teleW = 280;
-        pData->hGrpTelemetry = CreateWindowExW(0, L"BUTTON", L"手柄数据",
-            WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
-            margin, grp2Y, teleW, grp2H, hwnd, NULL, hInst, NULL);
-
-        cx = margin + 14;
-        cy = grp2Y + 28;
-
-        /* X angle */
-        CreateLabel(hwnd, hInst, -1, cx, cy + 3, 80, 22, L"X角度:", pData->hFont);
-        pData->hXText = CreateWindowExW(0, L"STATIC", L"--",
-            WS_CHILD | WS_VISIBLE | SS_LEFT,
-            cx + 84, cy + 3, 120, 22,
-            hwnd, (HMENU)IDC_LORA_X_TEXT, hInst, NULL);
-        SendMessageW(pData->hXText, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
-        cy += lineH;
-
-        /* Y angle */
-        CreateLabel(hwnd, hInst, -1, cx, cy + 3, 80, 22, L"Y角度:", pData->hFont);
-        pData->hYText = CreateWindowExW(0, L"STATIC", L"--",
-            WS_CHILD | WS_VISIBLE | SS_LEFT,
-            cx + 84, cy + 3, 120, 22,
-            hwnd, (HMENU)IDC_LORA_Y_TEXT, hInst, NULL);
-        SendMessageW(pData->hYText, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
-        cy += lineH;
-
-        /* Button state */
-        CreateLabel(hwnd, hInst, -1, cx, cy + 3, 80, 22, L"按键状态:", pData->hFont);
-        pData->hBtnText = CreateWindowExW(0, L"STATIC", L"--",
-            WS_CHILD | WS_VISIBLE | SS_LEFT,
-            cx + 84, cy + 3, 120, 22,
-            hwnd, (HMENU)IDC_LORA_BTN_TEXT, hInst, NULL);
-        SendMessageW(pData->hBtnText, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
-        cy += lineH;
-
-        /* Counters */
-        pData->hRxCount = CreateWindowExW(0, L"STATIC", L"RX: 0",
-            WS_CHILD | WS_VISIBLE | SS_LEFT,
-            cx, cy + 3, 80, 22,
-            hwnd, (HMENU)IDC_LORA_RX_COUNT, hInst, NULL);
-        SendMessageW(pData->hRxCount, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
-
-        pData->hTxCount = CreateWindowExW(0, L"STATIC", L"TX: 0",
-            WS_CHILD | WS_VISIBLE | SS_LEFT,
-            cx + 80, cy + 3, 80, 22,
-            hwnd, (HMENU)IDC_LORA_TX_COUNT, hInst, NULL);
-        SendMessageW(pData->hTxCount, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
-
-        pData->hErrCount = CreateWindowExW(0, L"STATIC", L"ERR: 0",
-            WS_CHILD | WS_VISIBLE | SS_LEFT,
-            cx + 160, cy + 3, 80, 22,
-            hwnd, (HMENU)IDC_LORA_ERR_COUNT, hInst, NULL);
-        SendMessageW(pData->hErrCount, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
-
-        /* Right: Raw log (stretch width) */
-        int logX = margin + teleW + 8;
-        int logW = pageW - margin - logX - margin;
-        if (logW < 200) logW = 200;
-        pData->hGrpLog = CreateWindowExW(0, L"BUTTON", L"原始日志",
-            WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
-            logX, grp2Y, logW, grp2H, hwnd, NULL, hInst, NULL);
-
-        int logEditX = logX + 10;
-        int logEditY = grp2Y + 24;
-        int logEditW = logW - 20;
-        int logEditH = grp2H - 34;
-        if (logEditW < 50) logEditW = 50;
-        if (logEditH < 50) logEditH = 50;
-        pData->hLogEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-            WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL |
-            ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
-            logEditX, logEditY, logEditW, logEditH,
-            hwnd, (HMENU)IDC_LORA_LOG_EDIT, hInst, NULL);
-        SendMessageW(pData->hLogEdit, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
-        SendMessageW(pData->hLogEdit, EM_LIMITTEXT, 0x7FFFFFFE, 0);
-
-        /* ========== Group 3: Operations (full width, ~40px) ========== */
-        int grp3Y = grp2Y + grp2H + 8;
-        int grp3H = 50;
-        int grp3W = pageW - 2 * margin;
-        pData->hGrpOps = CreateWindowExW(0, L"BUTTON", L"操作",
-            WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
-            margin, grp3Y, grp3W, grp3H, hwnd, NULL, hInst, NULL);
-
-        cx = margin + 14;
-        cy = grp3Y + 18;
-
-        pData->hSendEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-            cx, cy, 400, 24,
-            hwnd, (HMENU)IDC_LORA_SEND_EDIT, hInst, NULL);
-        SendMessageW(pData->hSendEdit, WM_SETFONT, (WPARAM)pData->hFontMono, TRUE);
-
-        int ox = cx + 408;
-        pData->hBtnSend = CreateWindowExW(0, L"BUTTON", L"发送",
-            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            ox, cy, 80, 26,
-            hwnd, (HMENU)IDC_LORA_SEND_BTN, hInst, NULL);
-        SendMessageW(pData->hBtnSend, WM_SETFONT, (WPARAM)pData->hFontBold, TRUE);
-
-        ox += 86;
-        pData->hBtnSaveCsv = CreateWindowExW(0, L"BUTTON", L"保存CSV",
-            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            ox, cy, 90, 26,
-            hwnd, (HMENU)IDC_LORA_SAVE_CSV_BTN, hInst, NULL);
-        SendMessageW(pData->hBtnSaveCsv, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
-
-        ox += 96;
-        pData->hBtnClear = CreateWindowExW(0, L"BUTTON", L"清除",
-            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            ox, cy, 80, 26,
-            hwnd, (HMENU)IDC_LORA_CLEAR_BTN, hInst, NULL);
-        SendMessageW(pData->hBtnClear, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
-
-        /* ========== Group 4: History ListView (bottom, stretch height) ========== */
-        int grp4Y = grp3Y + grp3H + 8;
-        int grp4H = pageH - grp4Y - margin;
-        if (grp4H < 100) grp4H = 100;
-        int grp4W = pageW - 2 * margin;
-        pData->hGrpHistory = CreateWindowExW(0, L"BUTTON", L"历史记录",
-            WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
-            margin, grp4Y, grp4W, grp4H, hwnd, NULL, hInst, NULL);
-
-        int listX = margin + 10;
-        int listY = grp4Y + 24;
-        int listW = grp4W - 20;
-        int listH = grp4H - 34;
-        if (listW < 100) listW = 100;
-        if (listH < 50) listH = 50;
-
-        pData->hHistoryList = CreateWindowExW(
-            WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
-            WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | WS_VSCROLL,
-            listX, listY, listW, listH,
-            hwnd, (HMENU)IDC_LORA_HISTORY_LIST, hInst, NULL);
-        SendMessageW(pData->hHistoryList, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
-
-        /* Enable full-row select and grid lines */
-        SendMessageW(pData->hHistoryList, LVM_SETEXTENDEDLISTVIEWSTYLE,
-                     LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES,
-                     LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
-
-        /* Add columns */
-        LVCOLUMNW lvc = {0};
-        lvc.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_FMT;
-        lvc.fmt  = LVCFMT_LEFT;
-
-        lvc.pszText = L"时间";
-        lvc.cx = 140;
-        SendMessageW(pData->hHistoryList, LVM_INSERTCOLUMNW, 0, (LPARAM)&lvc);
-
-        lvc.pszText = L"NID";
-        lvc.cx = 100;
-        SendMessageW(pData->hHistoryList, LVM_INSERTCOLUMNW, 1, (LPARAM)&lvc);
-
-        lvc.pszText = L"类型";
-        lvc.cx = 80;
-        SendMessageW(pData->hHistoryList, LVM_INSERTCOLUMNW, 2, (LPARAM)&lvc);
-
-        lvc.pszText = L"数据";
-        lvc.cx = 200;
-        SendMessageW(pData->hHistoryList, LVM_INSERTCOLUMNW, 3, (LPARAM)&lvc);
-
-        RECT rcList0;
-        GetClientRect(pData->hHistoryList, &rcList0);
-        int cw0 = rcList0.right - rcList0.left;
-        int dw0 = cw0 - 320;
-        if (dw0 < 100) dw0 = 100;
-        SendMessageW(pData->hHistoryList, LVM_SETCOLUMNWIDTH, 3, dw0);
-
-        /* Disable visual themes on group boxes so WM_CTLCOLORSTATIC works */
-        {
-            typedef HRESULT (WINAPI *PFN_SetWindowTheme)(HWND, LPCWSTR, LPCWSTR);
-            HMODULE hUx = GetModuleHandleW(L"uxtheme.dll");
-            if (hUx) {
-                PFN_SetWindowTheme pFn = (PFN_SetWindowTheme)GetProcAddress(hUx, "SetWindowTheme");
-                if (pFn) {
-                    HWND child = GetWindow(hwnd, GW_CHILD);
-                    while (child) {
-                        if ((GetWindowLongPtrW(child, GWL_STYLE) & 0xF) == BS_GROUPBOX)
-                            pFn(child, L"", L"");
-                        child = GetWindow(child, GW_HWNDNEXT);
-                    }
-                }
-            }
-        }
-
-        return 0;
-    }
 
     /* ---- Connection state (from SDK via PostMessage) ---- */
     case WM_LORA_CONN_STATE: {
@@ -559,7 +575,7 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
             EnableWindow(pData->hBtnConnect, TRUE);
             break;
         }
-        return 0;
+        return TAB_MSG_HANDLED;
     }
 
     /* ---- Network params (from SDK via PostMessage) ---- */
@@ -571,13 +587,13 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
             SetWindowTextW(pData->hEditIp, wbuf);
             free(msg);
         }
-        return 0;
+        return TAB_MSG_HANDLED;
     }
 
     /* ---- Frame received (from SDK via PostMessage) ---- */
     case WM_LORA_FRAME: {
         LoraFrameMsg *msg = (LoraFrameMsg *)lParam;
-        if (!msg) return 0;
+        if (!msg) return TAB_MSG_HANDLED;
 
         pData->rxCount++;
         UpdateCounters(pData);
@@ -593,13 +609,11 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
 
         switch (type) {
         case 0x01: { /* HANDLER / Scanner merged data */
-            /* body = data[1..], body_len = len-1 */
             uint16_t body_len = msg->len - 1;
             const uint8_t *body = msg->data + 1;
 
             if (body_len == 8 &&
                 body[5] == 0xFF && body[6] == 0xFF && body[7] == 0xFF) {
-                /* Telemetry: X(2B BE) + Y(2B BE) + btn(1B) + 0xFF*3 */
                 int16_t x = (int16_t)((uint16_t)body[0] << 8 | body[1]);
                 int16_t y = (int16_t)((uint16_t)body[2] << 8 | body[3]);
                 uint8_t btn = body[4] & 0x01;
@@ -615,8 +629,7 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
                 wsprintfW(dataStr, L"X=%d Y=%d Btn=%s",
                           x, y, btn ? L"Released" : L"Pressed");
 
-                /* 收到遥测后回发模拟扫描仪合并帧 — 通过 PostMessage 延迟执行，
-                   避免在 UI 线程中同步调用 SDK send (SDK recv 线程同时活跃) */
+                /* 收到遥测后回发模拟扫描仪合并帧 */
                 if (pData->sdk) {
                     lora_scanner_data_t scan = {
                         .overbreak_valid = 1,
@@ -645,7 +658,7 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         case 0x02: { /* TEST: echo frame back */
             typeStr = L"测试";
 
-            /* Echo back — deferred via PostMessage */
+            /* Echo back - deferred via PostMessage */
             if (pData->sdk) {
                 LoraSendMsg *smsg = (LoraSendMsg *)malloc(
                     offsetof(LoraSendMsg, data) + msg->len);
@@ -657,19 +670,16 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
                 }
             }
 
-            /* body = data[1..], body_len = len-1 */
             uint16_t body_len = msg->len - 1;
             const uint8_t *body = msg->data + 1;
 
             if (body_len >= 6) {
-                /* New format: [index 2B BE][timestamp 4B BE] */
                 uint16_t idx = (uint16_t)((uint16_t)body[0] << 8 | body[1]);
                 uint32_t ts  = (uint32_t)((uint32_t)body[2] << 24 |
                                           (uint32_t)body[3] << 16 |
                                           (uint32_t)body[4] << 8 | body[5]);
                 wsprintfW(dataStr, L"idx=%u ts=%u ms -> echo", idx, ts);
 
-                /* Record test entry for CSV */
                 if (pData->csvCount < MAX_CSV_ENTRIES) {
                     CsvTestEntry *e = &pData->csvEntries[pData->csvCount++];
                     e->nid = msg->nid;
@@ -707,7 +717,6 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
             typeStr = L"RSSI";
             wsprintfW(dataStr, L"RSSI请求");
 
-            /* Query gateway RSSI and send response back to this NID */
             if (pData->sdk) {
                 lora_sdk_query_rssi(pData->sdk, msg->nid);
             }
@@ -724,22 +733,20 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         }
         }
 
-        /* Add to history */
         AddHistoryEntry(pData, timeStr, msg->nid, typeStr, dataStr);
 
-        /* Update NID display */
         wchar_t nidBuf[16];
         wsprintfW(nidBuf, L"%08X", msg->nid);
         SetWindowTextW(pData->hNidText, nidBuf);
 
         free(msg);
-        return 0;
+        return TAB_MSG_HANDLED;
     }
 
     /* ---- Deferred frame send (posted by WM_LORA_FRAME handler) ---- */
     case WM_LORA_SEND_FRAME: {
         LoraSendMsg *smsg = (LoraSendMsg *)lParam;
-        if (!smsg) return 0;
+        if (!smsg) return TAB_MSG_HANDLED;
         if (pData && pData->sdk) {
             lora_sdk_send_frame(pData->sdk, smsg->nid,
                                 smsg->data, smsg->len);
@@ -747,18 +754,17 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
             UpdateCounters(pData);
         }
         free(smsg);
-        return 0;
+        return TAB_MSG_HANDLED;
     }
 
     /* ---- Log message (from SDK via PostMessage) ---- */
     case WM_LORA_LOG: {
         char *text = (char *)lParam;
-        if (!text) return 0;
+        if (!text) return TAB_MSG_HANDLED;
 
         wchar_t timeStr[32];
         GetTimestampStr(timeStr, 32);
 
-        /* Convert UTF-8 to wide string */
         int wlen = MultiByteToWideChar(CP_UTF8, 0, text, -1, NULL, 0);
         if (wlen > 0) {
             wchar_t *wtext = (wchar_t *)malloc(wlen * sizeof(wchar_t));
@@ -777,18 +783,17 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         }
 
         free(text);
-        return 0;
+        return TAB_MSG_HANDLED;
     }
 
     /* ---- Hex dump (from SDK via PostMessage) ---- */
     case WM_LORA_HEX_DUMP: {
         LoraHexDumpMsg *msg = (LoraHexDumpMsg *)lParam;
-        if (!msg) return 0;
+        if (!msg) return TAB_MSG_HANDLED;
 
         wchar_t timeStr[32];
         GetTimestampStr(timeStr, 32);
 
-        /* Convert prefix to wide */
         int pwlen = MultiByteToWideChar(CP_UTF8, 0, msg->prefix, -1, NULL, 0);
         wchar_t *wprefix = NULL;
         if (pwlen > 0) {
@@ -797,7 +802,6 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
                 MultiByteToWideChar(CP_UTF8, 0, msg->prefix, -1, wprefix, pwlen);
         }
 
-        /* Format hex data with dynamic buffer */
         int hexCap = msg->len * 3 + 4;
         wchar_t *hexBuf = (wchar_t *)malloc(hexCap * sizeof(wchar_t));
         if (hexBuf) {
@@ -819,7 +823,7 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
 
         if (wprefix) free(wprefix);
         free(msg);
-        return 0;
+        return TAB_MSG_HANDLED;
     }
 
     /* ---- Command handling ---- */
@@ -827,13 +831,12 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         switch (LOWORD(wParam)) {
 
         case IDC_LORA_CONNECT_BTN: {
-            if (!pData->sdk) return 0;
+            if (!pData->sdk) return TAB_MSG_HANDLED;
 
             wchar_t btnText[16] = {0};
             GetWindowTextW(pData->hBtnConnect, btnText, 16);
 
             if (wcsstr(btnText, L"连接") && !wcsstr(btnText, L"中")) {
-                /* 执行连接 */
                 wchar_t ipBuf[64];
                 GetWindowTextW(pData->hEditIp, ipBuf, 64);
 
@@ -846,14 +849,13 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
 
                 lora_sdk_connect(pData->sdk, ipA, port);
             } else {
-                /* 执行断开 */
                 lora_sdk_disconnect(pData->sdk);
             }
-            return 0;
+            return TAB_MSG_HANDLED;
         }
 
         case IDC_LORA_SEND_BTN: {
-            if (!pData->sdk) return 0;
+            if (!pData->sdk) return TAB_MSG_HANDLED;
 
             wchar_t hexStr[256];
             GetWindowTextW(pData->hSendEdit, hexStr, 256);
@@ -862,7 +864,6 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
             int dataLen = ParseHexData(hexStr, data, 128);
 
             if (dataLen > 0) {
-                /* Read NID from display, default to 0 */
                 wchar_t nidBuf[16];
                 GetWindowTextW(pData->hNidText, nidBuf, 16);
                 uint32_t nid = 0;
@@ -873,44 +874,38 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
                 pData->txCount++;
                 UpdateCounters(pData);
             }
-            return 0;
+            return TAB_MSG_HANDLED;
         }
 
         case IDC_LORA_CLEAR_BTN: {
-            /* Clear log */
             HWND hLog = pData->hLogEdit;
             ShowWindow(hLog, SW_HIDE);
             SetWindowTextW(hLog, L"");
             RedrawWindow(hLog, NULL, NULL, RDW_ERASE | RDW_INVALIDATE | RDW_UPDATENOW);
             ShowWindow(hLog, SW_SHOW);
 
-            /* Reset counters */
             pData->rxCount = 0;
             pData->txCount = 0;
             pData->errCount = 0;
             UpdateCounters(pData);
 
-            /* Clear history */
             SendMessageW(pData->hHistoryList, LVM_DELETEALLITEMS, 0, 0);
 
-            /* Clear CSV entries */
             pData->csvCount = 0;
 
-            /* Reset telemetry */
             SetWindowTextW(pData->hXText, L"--");
             SetWindowTextW(pData->hYText, L"--");
             SetWindowTextW(pData->hBtnText, L"--");
-            return 0;
+            return TAB_MSG_HANDLED;
         }
 
         case IDC_LORA_SAVE_CSV_BTN: {
             if (pData->csvCount == 0) {
                 MessageBoxW(hwnd, L"没有测试数据可保存", L"提示",
                             MB_OK | MB_ICONINFORMATION);
-                return 0;
+                return TAB_MSG_HANDLED;
             }
 
-            /* Get save file name */
             wchar_t fileName[MAX_PATH] = L"lora_test.csv";
             OPENFILENAMEW ofn;
             memset(&ofn, 0, sizeof(ofn));
@@ -928,16 +923,12 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
                 if (!fp) {
                     MessageBoxW(hwnd, L"无法创建文件", L"错误",
                                 MB_OK | MB_ICONERROR);
-                    return 0;
+                    return TAB_MSG_HANDLED;
                 }
 
-                /* Write BOM for Excel UTF-8 compatibility */
                 fprintf(fp, "\xEF\xBB\xBF");
-
-                /* CSV header */
                 fprintf(fp, "Index,Time,NID,DevTimestamp_ms\r\n");
 
-                /* CSV rows */
                 for (int i = 0; i < pData->csvCount; i++) {
                     CsvTestEntry *e = &pData->csvEntries[i];
                     fprintf(fp, "%u,%s,%08X,%u\n",
@@ -952,7 +943,7 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
                 MessageBoxW(hwnd, msgBuf, L"保存成功",
                             MB_OK | MB_ICONINFORMATION);
             }
-            return 0;
+            return TAB_MSG_HANDLED;
         }
 
         case IDC_LORA_TEST_CHECK: {
@@ -960,144 +951,32 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
                                              BM_GETCHECK, 0, 0) == BST_CHECKED) ? 1 : 0;
             if (pData->sdk)
                 lora_sdk_set_test_flag(pData->sdk, pData->testMode);
-            return 0;
+            return TAB_MSG_HANDLED;
         }
 
         default:
             break;
         }
-        break;
+        return TAB_MSG_HANDLED;
 
-    /* ---- Resize: adapt group boxes ---- */
-    case WM_SIZE: {
-        int cx = LOWORD(lParam);
-        int cy = HIWORD(lParam);
-        if (cx < 100 || cy < 100) return 0;
+    } /* end switch */
 
-        int margin = 14;
-        int grp1H = 70;
-        int grp2H = 180;
-        int grp3H = 50;
-
-        int grp1W = cx - 2 * margin;
-        MoveWindow(pData->hGrpConn, margin, margin, grp1W, grp1H, TRUE);
-        LayoutConnControls(pData, margin, grp1W, margin, grp1H);
-
-        /* Group 2: Middle split */
-        int grp2Y = margin + grp1H + 8;
-        int teleW = 280;
-        int logW = cx - margin - (margin + teleW + 8) - margin;
-        if (logW < 200) logW = 200;
-
-        MoveWindow(pData->hGrpTelemetry, margin, grp2Y, teleW, grp2H, TRUE);
-        MoveWindow(pData->hGrpLog, margin + teleW + 8, grp2Y, logW, grp2H, TRUE);
-
-        /* Resize log edit */
-        int logEditX = margin + teleW + 8 + 10;
-        int logEditY = grp2Y + 24;
-        int logEditW = logW - 20;
-        int logEditH = grp2H - 34;
-        if (logEditW < 50) logEditW = 50;
-        if (logEditH < 50) logEditH = 50;
-        MoveWindow(pData->hLogEdit, logEditX, logEditY, logEditW, logEditH, TRUE);
-
-        /* Group 3: Operations */
-        int grp3Y = grp2Y + grp2H + 8;
-        int grp3W = cx - 2 * margin;
-        MoveWindow(pData->hGrpOps, margin, grp3Y, grp3W, grp3H, TRUE);
-
-        /* Group 4: History - stretch height */
-        int grp4Y = grp3Y + grp3H + 8;
-        int grp4H = cy - grp4Y - margin;
-        if (grp4H < 100) grp4H = 100;
-        int grp4W = cx - 2 * margin;
-        MoveWindow(pData->hGrpHistory, margin, grp4Y, grp4W, grp4H, TRUE);
-
-        /* Resize history list view */
-        int listX = margin + 10;
-        int listY = grp4Y + 24;
-        int listW = grp4W - 20;
-        int listH = grp4H - 34;
-        if (listW < 100) listW = 100;
-        if (listH < 50) listH = 50;
-        MoveWindow(pData->hHistoryList, listX, listY, listW, listH, TRUE);
-
-        RECT rcList;
-        GetClientRect(pData->hHistoryList, &rcList);
-        int clientW = rcList.right - rcList.left;
-        int dataColW = clientW - 320;
-        if (dataColW < 100) dataColW = 100;
-        SendMessageW(pData->hHistoryList, LVM_SETCOLUMNWIDTH, 3, dataColW);
-
-        return 0;
-    }
-
-    /* ---- Cleanup ---- */
-    case WM_DESTROY:
-        if (pData) {
-            if (pData->hFont)     DeleteObject(pData->hFont);
-            if (pData->hFontBold) DeleteObject(pData->hFontBold);
-            if (pData->hFontMono) DeleteObject(pData->hFontMono);
-            free(pData);
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-        }
-        return 0;
-    }
-
-    /* Group box title: blue text */
-    if (uMsg == WM_CTLCOLORSTATIC) {
-        HWND ctl = (HWND)lParam;
-        if ((GetWindowLongPtrW(ctl, GWL_STYLE) & 0xF) == BS_GROUPBOX) {
-            SetTextColor((HDC)wParam, RGB(0, 80, 180));
-            SetBkMode((HDC)wParam, TRANSPARENT);
-            return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
-        }
-    }
-
-    return DefWindowProcW(hwnd, uMsg, wParam, lParam);
+    return TAB_MSG_NOT_HANDLED;
 }
 
 /* ------------------------------------------------------------------ */
-/*  Public API: Create / Destroy                                       */
+/*  Vtable + Public API                                               */
 /* ------------------------------------------------------------------ */
 
-static const wchar_t *TAB_LORA_DATA_CLASS = L"TabLoraDataClass";
-static int g_loraDataClassRegistered = 0;
+static const TAB_IFACE g_lora_data_iface = {
+    .data_size  = sizeof(TAB_LORA_DATA),
+    .on_create  = lora_data_on_create,
+    .on_size    = lora_data_on_size,
+    .on_destroy = lora_data_on_destroy,
+    .on_message = lora_data_on_message,
+};
 
 HWND TabLoraData_Create(HWND hParent, HINSTANCE hInst, lora_sdk_t *sdk)
 {
-    if (!g_loraDataClassRegistered) {
-        WNDCLASSEXW wc = { 0 };
-        wc.cbSize        = sizeof(wc);
-        wc.style         = CS_HREDRAW | CS_VREDRAW;
-        wc.lpfnWndProc   = TabLoraData_WndProc;
-        wc.hInstance     = hInst;
-        wc.hCursor       = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
-        wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-        wc.lpszClassName = TAB_LORA_DATA_CLASS;
-        RegisterClassExW(&wc);
-        g_loraDataClassRegistered = 1;
-    }
-
-    RECT rcParent;
-    GetClientRect(hParent, &rcParent);
-    TabCtrl_AdjustRect(hParent, FALSE, &rcParent);
-
-    HWND hwnd = CreateWindowExW(
-        0,
-        TAB_LORA_DATA_CLASS,
-        L"",
-        WS_CHILD | WS_CLIPCHILDREN,
-        rcParent.left, rcParent.top,
-        rcParent.right - rcParent.left,
-        rcParent.bottom - rcParent.top,
-        hParent, NULL, hInst, sdk);
-
-    return hwnd;
-}
-
-void TabLoraData_Destroy(HWND hwnd)
-{
-    if (hwnd)
-        DestroyWindow(hwnd);
+    return TabBase_CreatePage(hParent, hInst, &g_lora_data_iface, sdk);
 }

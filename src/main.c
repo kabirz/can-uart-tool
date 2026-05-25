@@ -19,14 +19,10 @@
 
 /* Forward declarations for tab page creation */
 extern HWND TabCanUpgrade_Create(HWND hParent, HINSTANCE hInst, CanManager *can_mgr, UartManager *uart_mgr, HWND hNotifyWnd);
-extern void TabCanUpgrade_Destroy(HWND hwnd);
 extern HWND TabCanCommand_Create(HWND hParent, HINSTANCE hInst, CanCommand *cmd);
-extern void TabCanCommand_Destroy(HWND hwnd);
 extern void TabCanCommand_UpdateChannel(HWND hwnd, int channel);
 extern HWND TabLoraData_Create(HWND hParent, HINSTANCE hInst, lora_sdk_t *sdk);
-extern void TabLoraData_Destroy(HWND hwnd);
 extern HWND TabLoraCfg_Create(HWND hParent, HINSTANCE hInst, lora_sdk_t *sdk);
-extern void TabLoraCfg_Destroy(HWND hwnd);
 
 #define MAX_TABS 4
 
@@ -490,14 +486,12 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 
     case WM_DESTROY:
         /* Destroy tab pages explicitly */
-        TabLoraData_Destroy(g_App.hTabPages[0]);
-        g_App.hTabPages[0] = NULL;
-        TabLoraCfg_Destroy(g_App.hTabPages[1]);
-        g_App.hTabPages[1] = NULL;
-        TabCanUpgrade_Destroy(g_App.hTabPages[2]);
-        g_App.hTabPages[2] = NULL;
-        TabCanCommand_Destroy(g_App.hTabPages[3]);
-        g_App.hTabPages[3] = NULL;
+        for (int i = 0; i < MAX_TABS; i++) {
+            if (g_App.hTabPages[i]) {
+                DestroyWindow(g_App.hTabPages[i]);
+                g_App.hTabPages[i] = NULL;
+            }
+        }
 
         /* Clear callback routing pointers */
         g_App.loraTabs.hDataTab = NULL;
