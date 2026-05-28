@@ -21,7 +21,7 @@
 
 #define SERIAL_RX_BUF_SIZE    4096
 #define SERIAL_AT_TIMEOUT_MS  3000
-#define SERIAL_AT_POLL_MS     50
+#define SERIAL_AT_POLL_MS     5
 #define SERIAL_HANDSHAKE_TO_MS 500
 
 /* ================================================================
@@ -111,7 +111,7 @@ static int serial_enter_at_mode(lora_sdk_t *sdk)
     PurgeComm(sdk->serial_handle, PURGE_RXCLEAR | PURGE_TXCLEAR);
 
     /* Guard time — device needs silence before +++ */
-    Sleep(100);
+    Sleep(50);
 
     /* Step 1: send "+++" (no CR/LF), wait for "a" */
     SDK_CALL(sdk, on_log, "Entering AT mode: sending +++", LORA_SDK_LOG_SERIAL);
@@ -161,7 +161,7 @@ static void serial_exit_at_mode(lora_sdk_t *sdk)
     serial_write_str(sdk, "AT+ENTM\r\n");
 
     /* Brief wait for response, then purge */
-    Sleep(200);
+    Sleep(100);
     PurgeComm(sdk->serial_handle, PURGE_RXCLEAR | PURGE_TXCLEAR);
 
     sdk->serial_at_mode = 0;
@@ -195,6 +195,9 @@ static DWORD WINAPI serial_at_worker(LPVOID param)
         return 1;
     }
 
+    /* Lock serial for the entire send+recv transaction */
+    EnterCriticalSection(&sdk->serial_cs);
+
     /* Purge RX before sending */
     serial_purge_rx(sdk);
 
@@ -207,6 +210,7 @@ static DWORD WINAPI serial_at_worker(LPVOID param)
 
     if (serial_write_str(sdk, full_cmd) != 0) {
         SDK_CALL(sdk, on_error, "Serial AT command write failed", LORA_SDK_LOG_SERIAL);
+        LeaveCriticalSection(&sdk->serial_cs);
         free(work);
         return 1;
     }
@@ -214,6 +218,8 @@ static DWORD WINAPI serial_at_worker(LPVOID param)
     /* Read response */
     char rbuf[SERIAL_RX_BUF_SIZE];
     int n = serial_read_response(sdk, rbuf, sizeof(rbuf), SERIAL_AT_TIMEOUT_MS);
+
+    LeaveCriticalSection(&sdk->serial_cs);
 
     if (n > 0) {
         sdk_at_trim_response(rbuf, n);
@@ -329,6 +335,8 @@ static DWORD WINAPI serial_device_info_worker(LPVOID param)
         return 1;
     }
 
+    EnterCriticalSection(&sdk->serial_cs);
+
     char rbuf[SERIAL_RX_BUF_SIZE];
     const char *resp;
     char value[128];
@@ -358,6 +366,7 @@ static DWORD WINAPI serial_device_info_worker(LPVOID param)
     SDK_CALL(sdk, on_device_found,
              sdk->dev_mac, sdk->dev_name, sdk->dev_sw, "SERIAL");
 
+    LeaveCriticalSection(&sdk->serial_cs);
     free(work);
     return 0;
 }
@@ -373,6 +382,8 @@ static DWORD WINAPI serial_net_params_worker(LPVOID param)
         free(work);
         return 1;
     }
+
+    EnterCriticalSection(&sdk->serial_cs);
 
     char rbuf[SERIAL_RX_BUF_SIZE];
     const char *resp = serial_at_sync(sdk, "AT+WANN?", rbuf, sizeof(rbuf));
@@ -401,6 +412,7 @@ static DWORD WINAPI serial_net_params_worker(LPVOID param)
 
     SDK_CALL(sdk, on_net_params, sdk->dev_ip, sdk->dev_sm, sdk->dev_gw);
 
+    LeaveCriticalSection(&sdk->serial_cs);
     free(work);
     return 0;
 }
@@ -509,6 +521,7 @@ int sdk_serial_open(lora_sdk_t *sdk, const char *com_port, int baud_rate)
 
     sdk->serial_handle  = h;
     sdk->serial_at_mode = 0;
+    InitializeCriticalSection(&sdk->serial_cs);
     InterlockedExchange(&sdk->serial_open, 1);
 
     {
@@ -538,6 +551,7 @@ void sdk_serial_close(lora_sdk_t *sdk)
     }
 
     InterlockedExchange(&sdk->serial_open, 0);
+    DeleteCriticalSection(&sdk->serial_cs);
 
     SDK_CALL(sdk, on_log, "Serial port closed", LORA_SDK_LOG_SERIAL);
 }

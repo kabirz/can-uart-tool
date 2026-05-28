@@ -90,6 +90,7 @@ struct lora_sdk {
     volatile LONG    serial_open;
     int              at_transport;
     int              serial_at_mode;
+    CRITICAL_SECTION serial_cs;   /* protect serial handle concurrent access */
 };
 
 /* ================================================================
