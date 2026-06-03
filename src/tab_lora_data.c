@@ -605,15 +605,20 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
                 uint8_t btn = body[4] & 0x01;
 
                 wchar_t xBuf[16], yBuf[16];
-                wsprintfW(xBuf, L"%d", x);
-                wsprintfW(yBuf, L"%d", y);
+                int xv = x / 10;
+                int xd = (x < 0 ? -x : x) % 10;
+                int yv = y / 10;
+                int yd = (y < 0 ? -y : y) % 10;
+                wsprintfW(xBuf, L"%d.%d°", xv, xd);
+                wsprintfW(yBuf, L"%d.%d°", yv, yd);
                 SetWindowTextW(pData->hXText, xBuf);
                 SetWindowTextW(pData->hYText, yBuf);
                 SetWindowTextW(pData->hBtnText, btn ? L"松开" : L"按下");
 
                 typeStr = L"Telemetry";
-                wsprintfW(dataStr, L"X=%d Y=%d Btn=%s",
-                          x, y, btn ? L"Released" : L"Pressed");
+                wsprintfW(dataStr, L"X=%d.%d° Y=%d.%d° Btn=%s",
+                          xv, xd, yv, yd,
+                          btn ? L"Released" : L"Pressed");
 
                 /* 收到遥测后回发模拟扫描仪合并帧 — 通过 PostMessage 延迟执行，
                    避免在 UI 线程中同步调用 SDK send (SDK recv 线程同时活跃) */
