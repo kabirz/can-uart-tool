@@ -144,6 +144,17 @@ static TAB_LORA_CFG *GetCfgData(HWND hwnd)
     return (TAB_LORA_CFG *)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
 }
 
+/* Update work mode combo options based on NWMODE state (0=透传, 1=组网) */
+static void UpdateWorkModeCombo(TAB_LORA_CFG *pData, int isMesh)
+{
+    SendMessageW(pData->hComboTtmode, CB_RESETCONTENT, 0, 0);
+    SendMessageW(pData->hComboTtmode, CB_ADDSTRING, 0, (LPARAM)L"广播透传");
+    SendMessageW(pData->hComboTtmode, CB_ADDSTRING, 0, (LPARAM)L"指定节点");
+    if (isMesh)
+        SendMessageW(pData->hComboTtmode, CB_ADDSTRING, 0, (LPARAM)L"主动上报");
+    SendMessageW(pData->hComboTtmode, CB_SETCURSEL, 0, 0);
+}
+
 /* Create a static label (forces height to 24 for 24px font) */
 static HWND CreateLabel(HWND hParent, HINSTANCE hInst, int id,
                          int x, int y, int w, int h,
@@ -260,12 +271,14 @@ static void ParseAtResponse(TAB_LORA_CFG *pData, const char *resp)
     int val;
     wchar_t wbuf[128];
 
-    /* +NWMODE: */
+    /* +NWMODE: — also rebuild work mode combo to match */
     p = strstr(resp, "+NWMODE:");
     if (p) {
         if (sscanf(p + 8, "%d", &val) == 1) {
-            if (val >= 0 && val <= 1)
+            if (val >= 0 && val <= 1) {
                 SendMessageW(pData->hComboNwmode, CB_SETCURSEL, val, 0);
+                UpdateWorkModeCombo(pData, val);
+            }
         }
     }
 
@@ -278,12 +291,15 @@ static void ParseAtResponse(TAB_LORA_CFG *pData, const char *resp)
         }
     }
 
-    /* +WMODE: */
+    /* +WMODE: — set NWMODE to mesh and update work mode combo */
     p = strstr(resp, "+WMODE:");
     if (p) {
         if (sscanf(p + 7, "%d", &val) == 1) {
-            if (val >= 0 && val <= 2)
-                SendMessageW(pData->hComboWmode, CB_SETCURSEL, val, 0);
+            if (val >= 0 && val <= 2) {
+                SendMessageW(pData->hComboNwmode, CB_SETCURSEL, 1, 0);
+                UpdateWorkModeCombo(pData, 1);
+                SendMessageW(pData->hComboTtmode, CB_SETCURSEL, val, 0);
+            }
         }
     }
 
@@ -296,9 +312,9 @@ static void ParseAtResponse(TAB_LORA_CFG *pData, const char *resp)
         for (wchar_t *c = wbuf; *c; c++) {
             if (*c == L'\r' || *c == L'\n' || *c == L' ') { *c = L'\0'; break; }
         }
-        wchar_t txt[64];
-        wsprintfW(txt, L"UPWID: %s", wbuf);
-        SetWindowTextW(pData->hUpwidText, txt);
+        /* Only update display for ON/OFF status, not for OK confirmation */
+        if (wcscmp(wbuf, L"ON") == 0 || wcscmp(wbuf, L"OFF") == 0)
+            SetWindowTextW(pData->hUpwidText, wbuf);
     }
 
     /* +DHCP: */
@@ -934,7 +950,7 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
             ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
         cy += lineH;
 
-        /* Row 2: UPWID + 功率 */
+        /* Row 2: UPWID */
         ox = cx;
         CreateLabel(hwnd, hInst, -1, ox, cy + 2, 100, 24, L"上行携带ID:", pData->hFont);
         ox += 104;
@@ -949,24 +965,6 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         ox += smallBtnW + 6;
         pData->hBtnUpwidOff = CreateBtn(hwnd, hInst, IDC_CFG_UPWID_OFF,
             ox, cy, smallBtnW, smallBtnH, L"关闭", pData->hFont);
-        ox += smallBtnW + 14;
-
-        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 65, 24, L"功率:", pData->hFont);
-        ox += 69;
-        pData->hComboPwr = CreateCombo(hwnd, hInst, IDC_CFG_PWR_COMBO,
-            ox, cy, 78, 200, pData->hFont);
-        for (int p = 24; p <= 30; p++) {
-            wchar_t pbuf[8];
-            wsprintfW(pbuf, L"%d", p);
-            SendMessageW(pData->hComboPwr, CB_ADDSTRING, 0, (LPARAM)pbuf);
-        }
-        SendMessageW(pData->hComboPwr, CB_SETCURSEL, 6, 0); /* 30 */
-        ox += 84;
-        pData->hBtnPwrSet = CreateBtn(hwnd, hInst, IDC_CFG_PWR_SET,
-            ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
-        ox += smallBtnW + 6;
-        pData->hBtnPwrQuery = CreateBtn(hwnd, hInst, IDC_CFG_PWR_QUERY,
-            ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
         cy += lineH;
 
         /* Row 3: CH + Freq + SPD */
@@ -1013,6 +1011,25 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         ox += smallBtnW + 6;
         pData->hBtnSpdQuery = CreateBtn(hwnd, hInst, IDC_CFG_SPD_QUERY,
             ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
+        ox += smallBtnW + 14;
+
+        CreateLabel(hwnd, hInst, -1, ox, cy + 2, 65, 24, L"功率:", pData->hFont);
+        ox += 69;
+        pData->hComboPwr = CreateCombo(hwnd, hInst, IDC_CFG_PWR_COMBO,
+            ox, cy, 78, 200, pData->hFont);
+        for (int p = 24; p <= 30; p++) {
+            wchar_t pbuf[8];
+            wsprintfW(pbuf, L"%d", p);
+            SendMessageW(pData->hComboPwr, CB_ADDSTRING, 0, (LPARAM)pbuf);
+        }
+        SendMessageW(pData->hComboPwr, CB_SETCURSEL, 6, 0); /* 30 */
+        ox += 84;
+        pData->hBtnPwrSet = CreateBtn(hwnd, hInst, IDC_CFG_PWR_SET,
+            ox, cy, smallBtnW, smallBtnH, L"设置", pData->hFont);
+        ox += smallBtnW + 6;
+        pData->hBtnPwrQuery = CreateBtn(hwnd, hInst, IDC_CFG_PWR_QUERY,
+            ox, cy, smallBtnW, smallBtnH, L"查询", pData->hFont);
+        cy += lineH;
 
         /* ========== Group 4: AT Command ========== */
         int grp4Y = grp3Y + grp3H + 6;
@@ -1238,12 +1255,7 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
         case IDC_CFG_NWMODE_COMBO:
             if (HIWORD(wParam) == CBN_SELCHANGE) {
                 int isMesh = (int)SendMessageW(pData->hComboNwmode, CB_GETCURSEL, 0, 0);
-                SendMessageW(pData->hComboTtmode, CB_RESETCONTENT, 0, 0);
-                SendMessageW(pData->hComboTtmode, CB_ADDSTRING, 0, (LPARAM)L"广播透传");
-                SendMessageW(pData->hComboTtmode, CB_ADDSTRING, 0, (LPARAM)L"指定节点");
-                if (isMesh)
-                    SendMessageW(pData->hComboTtmode, CB_ADDSTRING, 0, (LPARAM)L"主动上报");
-                SendMessageW(pData->hComboTtmode, CB_SETCURSEL, 0, 0);
+                UpdateWorkModeCombo(pData, isMesh);
             }
             return 0;
 
