@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include "resource.h"
 #include "lora_sdk.h"
+#include "ui_helpers.h"
 
 /* ------------------------------------------------------------------ */
 /*  Message payload structures (heap-allocated, receiver frees)        */
@@ -161,11 +162,7 @@ static HWND CreateLabel(HWND hParent, HINSTANCE hInst, int id,
                          const wchar_t *text, HFONT hFont)
 {
     (void)h;
-    HWND hw = CreateWindowExW(0, L"STATIC", text,
-        WS_CHILD | WS_VISIBLE | SS_LEFT,
-        x, y, w, 24, hParent, (HMENU)(INT_PTR)id, hInst, NULL);
-    SendMessageW(hw, WM_SETFONT, (WPARAM)hFont, TRUE);
-    return hw;
+    return Ui_CreateLabel(hParent, hInst, id, x, y, w, 24, text, hFont);
 }
 
 /* Create a push button */
@@ -173,11 +170,7 @@ static HWND CreateBtn(HWND hParent, HINSTANCE hInst, int id,
                        int x, int y, int w, int h,
                        const wchar_t *text, HFONT hFont)
 {
-    HWND hw = CreateWindowExW(0, L"BUTTON", text,
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        x, y, w, h, hParent, (HMENU)(INT_PTR)id, hInst, NULL);
-    SendMessageW(hw, WM_SETFONT, (WPARAM)hFont, TRUE);
-    return hw;
+    return Ui_CreateBtn(hParent, hInst, id, x, y, w, h, text, hFont);
 }
 
 /* Create a combo box (dropdown list) */
@@ -185,11 +178,7 @@ static HWND CreateCombo(HWND hParent, HINSTANCE hInst, int id,
                          int x, int y, int w, int h,
                          HFONT hFont)
 {
-    HWND hw = CreateWindowExW(0, L"COMBOBOX", L"",
-        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-        x, y, w, h, hParent, (HMENU)(INT_PTR)id, hInst, NULL);
-    SendMessageW(hw, WM_SETFONT, (WPARAM)hFont, TRUE);
-    return hw;
+    return Ui_CreateCombo(hParent, hInst, id, x, y, w, h, hFont);
 }
 
 /* Create an edit control (forces height to 26 for 24px font) */
@@ -198,11 +187,7 @@ static HWND CreateEdit(HWND hParent, HINSTANCE hInst, int id,
                         const wchar_t *text, HFONT hFont, DWORD extraStyle)
 {
     (void)h;
-    HWND hw = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", text,
-        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | extraStyle,
-        x, y, w, 26, hParent, (HMENU)(INT_PTR)id, hInst, NULL);
-    SendMessageW(hw, WM_SETFONT, (WPARAM)hFont, TRUE);
-    return hw;
+    return Ui_CreateEdit(hParent, hInst, id, x, y, w, h, text, hFont, extraStyle);
 }
 
 /* Create a read-only static text field (forces height to 26 for 24px font) */
@@ -211,11 +196,7 @@ static HWND CreateStaticText(HWND hParent, HINSTANCE hInst, int id,
                               const wchar_t *text, HFONT hFont)
 {
     (void)h;
-    HWND hw = CreateWindowExW(0, L"STATIC", text,
-        WS_CHILD | WS_VISIBLE | SS_LEFT | SS_SUNKEN,
-        x, y, w, 26, hParent, (HMENU)(INT_PTR)id, hInst, NULL);
-    SendMessageW(hw, WM_SETFONT, (WPARAM)hFont, TRUE);
-    return hw;
+    return Ui_CreateStaticText(hParent, hInst, id, x, y, w, h, text, hFont);
 }
 
 /* Send AT command via SDK */
@@ -228,38 +209,7 @@ static void SendAtCmd(TAB_LORA_CFG *pData, const char *cmd)
 /* Append timestamped text to log edit */
 static void AppendLog(TAB_LORA_CFG *pData, const char *text)
 {
-    if (!pData->hLogEdit) return;
-
-    SYSTEMTIME st;
-    GetLocalTime(&st);
-
-    wchar_t ts[32];
-    _snwprintf(ts, 32, L"[%02d:%02d:%02d] ", st.wHour, st.wMinute, st.wSecond);
-
-    /* Convert UTF-8 text to wide string */
-    int wlen = MultiByteToWideChar(CP_UTF8, 0, text, -1, NULL, 0);
-    if (wlen <= 0) return;
-    wchar_t *wtext = (wchar_t *)malloc(wlen * sizeof(wchar_t));
-    if (!wtext) return;
-    MultiByteToWideChar(CP_UTF8, 0, text, -1, wtext, wlen);
-
-    int totalLen = GetWindowTextLengthW(pData->hLogEdit);
-    if (totalLen > 100000) {
-        SendMessageW(pData->hLogEdit, EM_SETSEL, 0, totalLen / 4);
-        SendMessageW(pData->hLogEdit, EM_REPLACESEL, FALSE, (LPARAM)L"");
-        totalLen = GetWindowTextLengthW(pData->hLogEdit);
-    }
-
-    SendMessageW(pData->hLogEdit, EM_SETSEL, totalLen, totalLen);
-    SendMessageW(pData->hLogEdit, EM_REPLACESEL, FALSE, (LPARAM)ts);
-    SendMessageW(pData->hLogEdit, EM_REPLACESEL, FALSE, (LPARAM)wtext);
-    /* Add newline if not already present */
-    int textLen = (int)wcslen(wtext);
-    if (textLen == 0 || (wtext[textLen - 1] != L'\n' && wtext[textLen - 1] != L'\r')) {
-        SendMessageW(pData->hLogEdit, EM_REPLACESEL, FALSE, (LPARAM)L"\r\n");
-    }
-    SendMessageW(pData->hLogEdit, EM_SCROLLCARET, 0, 0);
-    free(wtext);
+    Ui_AppendLog(pData->hLogEdit, text);
 }
 
 /* Parse AT response and update corresponding controls — matches tools' lora_udp.c */
@@ -1077,21 +1027,7 @@ static LRESULT CALLBACK TabLoraCfg_WndProc(HWND hwnd, UINT uMsg,
             L"清除", pData->hFont);
 
         /* Disable visual themes on group boxes so WM_CTLCOLORSTATIC works */
-        {
-            typedef HRESULT (WINAPI *PFN_SetWindowTheme)(HWND, LPCWSTR, LPCWSTR);
-            HMODULE hUx = GetModuleHandleW(L"uxtheme.dll");
-            if (hUx) {
-                PFN_SetWindowTheme pFn = (PFN_SetWindowTheme)GetProcAddress(hUx, "SetWindowTheme");
-                if (pFn) {
-                    HWND child = GetWindow(hwnd, GW_CHILD);
-                    while (child) {
-                        if ((GetWindowLongPtrW(child, GWL_STYLE) & 0xF) == BS_GROUPBOX)
-                            pFn(child, L"", L"");
-                        child = GetWindow(child, GW_HWNDNEXT);
-                    }
-                }
-            }
-        }
+        Ui_DisableGroupBoxTheme(hwnd);
 
         return 0;
     }

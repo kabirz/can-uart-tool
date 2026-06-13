@@ -13,6 +13,7 @@
 #include <string.h>
 #include "resource.h"
 #include "lora_sdk.h"
+#include "ui_helpers.h"
 
 /* ------------------------------------------------------------------ */
 /*  Data types for marshaling from SDK callbacks to UI thread          */
@@ -129,11 +130,7 @@ static HWND CreateLabel(HWND hParent, HINSTANCE hInst, int id,
                          int x, int y, int w, int h,
                          const wchar_t *text, HFONT hFont)
 {
-    HWND hw = CreateWindowExW(0, L"STATIC", text,
-        WS_CHILD | WS_VISIBLE | SS_LEFT,
-        x, y, w, h, hParent, (HMENU)(INT_PTR)id, hInst, NULL);
-    SendMessageW(hw, WM_SETFONT, (WPARAM)hFont, TRUE);
-    return hw;
+    return Ui_CreateLabel(hParent, hInst, id, x, y, w, h, text, hFont);
 }
 
 static void LayoutConnControls(TAB_LORA_DATA *pData, int gX, int gW, int gY, int gH) {
@@ -523,21 +520,7 @@ static LRESULT CALLBACK TabLoraData_WndProc(HWND hwnd, UINT uMsg,
         SendMessageW(pData->hHistoryList, LVM_SETCOLUMNWIDTH, 3, dw0);
 
         /* Disable visual themes on group boxes so WM_CTLCOLORSTATIC works */
-        {
-            typedef HRESULT (WINAPI *PFN_SetWindowTheme)(HWND, LPCWSTR, LPCWSTR);
-            HMODULE hUx = GetModuleHandleW(L"uxtheme.dll");
-            if (hUx) {
-                PFN_SetWindowTheme pFn = (PFN_SetWindowTheme)GetProcAddress(hUx, "SetWindowTheme");
-                if (pFn) {
-                    HWND child = GetWindow(hwnd, GW_CHILD);
-                    while (child) {
-                        if ((GetWindowLongPtrW(child, GWL_STYLE) & 0xF) == BS_GROUPBOX)
-                            pFn(child, L"", L"");
-                        child = GetWindow(child, GW_HWNDNEXT);
-                    }
-                }
-            }
-        }
+        Ui_DisableGroupBoxTheme(hwnd);
 
         return 0;
     }

@@ -12,6 +12,7 @@
 #include "resource.h"
 #include "can_manager.h"
 #include "uart_manager.h"
+#include "ui_helpers.h"
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
@@ -115,25 +116,7 @@ static TAB_UPGRADE_DATA *GetTabPageData(HWND hwnd)
 /* Append a timestamped line to the log edit control */
 static void AppendLog(TAB_UPGRADE_DATA *pData, const char *msg)
 {
-    HWND hLog = pData->hEditLog;
-    if (!hLog) return;
-
-    int wlen = MultiByteToWideChar(CP_UTF8, 0, msg, -1, NULL, 0);
-    wchar_t *wstr = (wchar_t *)malloc(sizeof(wchar_t) * wlen);
-    MultiByteToWideChar(CP_UTF8, 0, msg, -1, wstr, wlen);
-
-    SYSTEMTIME st;
-    wchar_t timestamp[16];
-    GetLocalTime(&st);
-    wsprintfW(timestamp, L"[%02d:%02d:%02d] ", st.wHour, st.wMinute, st.wSecond);
-
-    int len = GetWindowTextLengthW(hLog);
-    SendMessageW(hLog, EM_SETSEL, len, len);
-    SendMessageW(hLog, EM_REPLACESEL, FALSE, (LPARAM)timestamp);
-    SendMessageW(hLog, EM_REPLACESEL, FALSE, (LPARAM)wstr);
-    SendMessageW(hLog, EM_REPLACESEL, FALSE, (LPARAM)L"\r\n");
-
-    free(wstr);
+    Ui_AppendLog(pData->hEditLog, msg);
 }
 
 /* Static trampoline – uses PostMessage for thread safety */
@@ -301,11 +284,7 @@ static HWND CreateLabel(HWND hParent, HINSTANCE hInst, int id,
                          int x, int y, int w, int h,
                          const wchar_t *text, HFONT hFont)
 {
-    HWND hw = CreateWindowExW(0, L"STATIC", text,
-        WS_CHILD | WS_VISIBLE | SS_LEFT,
-        x, y, w, h, hParent, (HMENU)(INT_PTR)id, hInst, NULL);
-    SendMessageW(hw, WM_SETFONT, (WPARAM)hFont, TRUE);
-    return hw;
+    return Ui_CreateLabel(hParent, hInst, id, x, y, w, h, text, hFont);
 }
 
 /* ------------------------------------------------------------------ */
@@ -560,21 +539,7 @@ static LRESULT CALLBACK TabCanUpgrade_WndProc(HWND hwnd, UINT uMsg,
         UpdateFlashButtonState(pData);
 
         /* Disable visual themes on group boxes so WM_CTLCOLORSTATIC works */
-        {
-            typedef HRESULT (WINAPI *PFN_SetWindowTheme)(HWND, LPCWSTR, LPCWSTR);
-            HMODULE hUx = GetModuleHandleW(L"uxtheme.dll");
-            if (hUx) {
-                PFN_SetWindowTheme pFn = (PFN_SetWindowTheme)GetProcAddress(hUx, "SetWindowTheme");
-                if (pFn) {
-                    HWND child = GetWindow(hwnd, GW_CHILD);
-                    while (child) {
-                        if ((GetWindowLongPtrW(child, GWL_STYLE) & 0xF) == BS_GROUPBOX)
-                            pFn(child, L"", L"");
-                        child = GetWindow(child, GW_HWNDNEXT);
-                    }
-                }
-            }
-        }
+        Ui_DisableGroupBoxTheme(hwnd);
 
         return 0;
     }

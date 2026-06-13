@@ -16,6 +16,7 @@ set(SOURCES
     src/tab_can_command.c
     src/tab_lora_data.c
     src/tab_lora_cfg.c
+    src/ui_helpers.c
 )
 
 set(RESOURCES

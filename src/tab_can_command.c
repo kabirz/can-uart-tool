@@ -17,6 +17,7 @@
 #include <string.h>
 #include "resource.h"
 #include "can_command.h"
+#include "ui_helpers.h"
 
 /* ------------------------------------------------------------------ */
 /*  Known CAN IDs from mod-can.h protocol                              */
@@ -130,38 +131,14 @@ static HWND CreateLabel(HWND hParent, HINSTANCE hInst, int id,
                          int x, int y, int w, int h,
                          const wchar_t *text, HFONT hFont)
 {
-    HWND hw = CreateWindowExW(0, L"STATIC", text,
-        WS_CHILD | WS_VISIBLE | SS_LEFT,
-        x, y, w, h, hParent, (HMENU)(INT_PTR)id, hInst, NULL);
-    SendMessageW(hw, WM_SETFONT, (WPARAM)hFont, TRUE);
-    return hw;
+    return Ui_CreateLabel(hParent, hInst, id, x, y, w, h, text, hFont);
 }
 
 /* Big-endian helpers */
-static void PutBE32(uint32_t val, uint8_t *buf)
-{
-    buf[0] = (uint8_t)(val >> 24);
-    buf[1] = (uint8_t)(val >> 16);
-    buf[2] = (uint8_t)(val >> 8);
-    buf[3] = (uint8_t)(val);
-}
-
-static uint16_t GetBE16(const uint8_t *buf)
-{
-    return ((uint16_t)buf[0] << 8) | (uint16_t)buf[1];
-}
-
-static void PutBE16(uint16_t val, uint8_t *buf)
-{
-    buf[0] = (uint8_t)(val >> 8);
-    buf[1] = (uint8_t)(val);
-}
-
-static uint32_t GetBE32(const uint8_t *buf)
-{
-    return ((uint32_t)buf[0] << 24) | ((uint32_t)buf[1] << 16) |
-           ((uint32_t)buf[2] << 8)  | (uint32_t)buf[3];
-}
+static void PutBE32(uint32_t val, uint8_t *buf) { Ui_PutBE32(val, buf); }
+static uint16_t GetBE16(const uint8_t *buf)     { return Ui_GetBE16(buf); }
+static void PutBE16(uint16_t val, uint8_t *buf) { Ui_PutBE16(val, buf); }
+static uint32_t GetBE32(const uint8_t *buf)     { return Ui_GetBE32(buf); }
 
 /* Get description string for known CAN IDs */
 static const wchar_t *GetFrameDesc(uint32_t can_id)
@@ -930,21 +907,7 @@ static LRESULT CALLBACK TabCanCommand_WndProc(HWND hwnd, UINT uMsg,
         UpdateControlStates(pData);
 
         /* Disable visual themes on group boxes so WM_CTLCOLORSTATIC works */
-        {
-            typedef HRESULT (WINAPI *PFN_SetWindowTheme)(HWND, LPCWSTR, LPCWSTR);
-            HMODULE hUx = GetModuleHandleW(L"uxtheme.dll");
-            if (hUx) {
-                PFN_SetWindowTheme pFn = (PFN_SetWindowTheme)GetProcAddress(hUx, "SetWindowTheme");
-                if (pFn) {
-                    HWND child = GetWindow(hwnd, GW_CHILD);
-                    while (child) {
-                        if ((GetWindowLongPtrW(child, GWL_STYLE) & 0xF) == BS_GROUPBOX)
-                            pFn(child, L"", L"");
-                        child = GetWindow(child, GW_HWNDNEXT);
-                    }
-                }
-            }
-        }
+        Ui_DisableGroupBoxTheme(hwnd);
 
         return 0;
     }
