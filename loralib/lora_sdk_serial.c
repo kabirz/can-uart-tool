@@ -181,13 +181,7 @@ static DWORD WINAPI serial_at_worker(LPVOID param)
     serial_at_work_t *work = (serial_at_work_t *)param;
     lora_sdk_t *sdk = work->sdk;
 
-    /* Ensure AT mode */
-    if (serial_enter_at_mode(sdk) != 0) {
-        free(work);
-        return 1;
-    }
-
-    /* Build full command with \r\n termination */
+    /* Build full command with \r\n termination (pure memory, no lock needed) */
     char full_cmd[520];
     if (sdk_at_ensure_crlf(work->cmd, full_cmd, sizeof(full_cmd)) < 0) {
         SDK_CALL(sdk, on_error, "AT command too long", LORA_SDK_LOG_SERIAL);
@@ -195,8 +189,15 @@ static DWORD WINAPI serial_at_worker(LPVOID param)
         return 1;
     }
 
-    /* Lock serial for the entire send+recv transaction */
+    /* Lock serial for AT-mode entry + the entire send+recv transaction,
+     * so concurrent workers cannot interleave +++ handshakes. */
     EnterCriticalSection(&sdk->serial_cs);
+
+    if (serial_enter_at_mode(sdk) != 0) {
+        LeaveCriticalSection(&sdk->serial_cs);
+        free(work);
+        return 1;
+    }
 
     /* Purge RX before sending */
     serial_purge_rx(sdk);
@@ -329,13 +330,14 @@ static DWORD WINAPI serial_device_info_worker(LPVOID param)
     serial_info_work_t *work = (serial_info_work_t *)param;
     lora_sdk_t *sdk = work->sdk;
 
+    EnterCriticalSection(&sdk->serial_cs);
+
     if (serial_enter_at_mode(sdk) != 0) {
+        LeaveCriticalSection(&sdk->serial_cs);
         SDK_CALL(sdk, on_error, "AT mode entry failed", LORA_SDK_LOG_SERIAL);
         free(work);
         return 1;
     }
-
-    EnterCriticalSection(&sdk->serial_cs);
 
     char rbuf[SERIAL_RX_BUF_SIZE];
     const char *resp;
@@ -377,13 +379,14 @@ static DWORD WINAPI serial_net_params_worker(LPVOID param)
     serial_info_work_t *work = (serial_info_work_t *)param;
     lora_sdk_t *sdk = work->sdk;
 
+    EnterCriticalSection(&sdk->serial_cs);
+
     if (serial_enter_at_mode(sdk) != 0) {
+        LeaveCriticalSection(&sdk->serial_cs);
         SDK_CALL(sdk, on_error, "AT mode entry failed", LORA_SDK_LOG_SERIAL);
         free(work);
         return 1;
     }
-
-    EnterCriticalSection(&sdk->serial_cs);
 
     char rbuf[SERIAL_RX_BUF_SIZE];
     const char *resp = serial_at_sync(sdk, "AT+WANN?", rbuf, sizeof(rbuf));
@@ -426,7 +429,7 @@ void sdk_serial_query_device_info(lora_sdk_t *sdk)
     }
 
     serial_info_work_t work_init = { sdk };
-    sdk_at_launch_worker(serial_device_info_worker, &work_init,
+    sdk_at_launch_worker(sdk, serial_device_info_worker, &work_init,
                           sizeof(work_init));
 }
 
@@ -439,7 +442,7 @@ void sdk_serial_query_net_params(lora_sdk_t *sdk)
     }
 
     serial_info_work_t work_init = { sdk };
-    sdk_at_launch_worker(serial_net_params_worker, &work_init,
+    sdk_at_launch_worker(sdk, serial_net_params_worker, &work_init,
                           sizeof(work_init));
 }
 
@@ -540,6 +543,10 @@ void sdk_serial_close(lora_sdk_t *sdk)
     if (!InterlockedCompareExchange(&sdk->serial_open, 0, 0))
         return;
 
+    /* 等待所有在途 worker 退出后再释放 serial_handle / serial_cs,
+     * 否则 worker 可能在句柄关闭或临界区销毁后仍 ReadFile/WriteFile。 */
+    sdk_at_join_workers(sdk);
+
     /* Exit AT mode if active */
     if (sdk->serial_at_mode)
         serial_exit_at_mode(sdk);
@@ -572,5 +579,5 @@ void sdk_serial_send_at(lora_sdk_t *sdk, const char *cmd)
     strncpy(work_init.cmd, cmd, sizeof(work_init.cmd) - 1);
     work_init.cmd[sizeof(work_init.cmd) - 1] = '\0';
 
-    sdk_at_launch_worker(serial_at_worker, &work_init, sizeof(work_init));
+    sdk_at_launch_worker(sdk, serial_at_worker, &work_init, sizeof(work_init));
 }

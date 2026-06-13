@@ -80,16 +80,58 @@ void sdk_at_dispatch_response(lora_sdk_t *sdk, const char *response,
  * Worker thread helper
  * ================================================================ */
 
-int sdk_at_launch_worker(LPTHREAD_START_ROUTINE worker,
+int sdk_at_launch_worker(lora_sdk_t *sdk, LPTHREAD_START_ROUTINE worker,
                            const void *work_data, size_t work_size)
 {
+    if (!sdk || !worker)
+        return -1;
+
     void *work = calloc(1, work_size);
     if (!work)
         return -1;
 
     memcpy(work, work_data, work_size);
-    CloseHandle(CreateThread(NULL, 0, worker, work, 0, NULL));
+
+    HANDLE h = CreateThread(NULL, 0, worker, work, 0, NULL);
+    if (!h) {
+        free(work);
+        return -1;
+    }
+
+    /* Track the handle so sdk_at_join_workers() can wait for it before
+     * resources are freed. If the table is full (sustained burst of >16
+     * concurrent workers), degrade to fire-and-forget by closing now. */
+    EnterCriticalSection(&sdk->worker_cs);
+    if (sdk->worker_count < SDK_MAX_WORKERS)
+        sdk->worker_threads[sdk->worker_count++] = h;
+    else
+        CloseHandle(h);
+    LeaveCriticalSection(&sdk->worker_cs);
+
     return 0;
+}
+
+void sdk_at_join_workers(lora_sdk_t *sdk)
+{
+    if (!sdk)
+        return;
+
+    /* Drain loop: pop one handle at a time and wait. Workers that launch
+     * nested workers (e.g. sdk_at_reboot -> sdk_serial_send_at) register
+     * new handles while we wait, and the loop collects them too. */
+    for (;;) {
+        HANDLE h;
+        EnterCriticalSection(&sdk->worker_cs);
+        if (sdk->worker_count == 0) {
+            LeaveCriticalSection(&sdk->worker_cs);
+            break;
+        }
+        h = sdk->worker_threads[--sdk->worker_count];
+        LeaveCriticalSection(&sdk->worker_cs);
+
+        WaitForSingleObject(h, INFINITE);
+        CloseHandle(h);
+    }
 }
 
 /* ================================================================
@@ -133,5 +175,5 @@ void sdk_at_reboot(lora_sdk_t *sdk)
     if (!sdk) return;
 
     sdk_reboot_work_t work = { sdk, sdk->at_transport };
-    sdk_at_launch_worker(sdk_reboot_worker, &work, sizeof(work));
+    sdk_at_launch_worker(sdk, sdk_reboot_worker, &work, sizeof(work));
 }

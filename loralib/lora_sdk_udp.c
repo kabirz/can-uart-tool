@@ -434,7 +434,7 @@ static void udp_send_raw(lora_sdk_t *sdk, const uint8_t *payload, int plen)
     memcpy(work_init.payload, payload, plen);
     work_init.sdk = sdk;
 
-    sdk_at_launch_worker(udp_worker, &work_init, sizeof(work_init));
+    sdk_at_launch_worker(sdk, udp_worker, &work_init, sizeof(work_init));
 }
 
 static void udp_send_at_cmd(lora_sdk_t *sdk, const char *cmd)

@@ -51,10 +51,19 @@ void sdk_at_dispatch_response(struct lora_sdk *sdk, const char *response,
 
 /* Launch a background worker thread.
  * Allocates a copy of work_data and passes it to the worker.
+ * The thread handle is tracked by 'sdk' so that sdk_at_join_workers()
+ * can wait for it before resources (serial handle, sdk itself) are freed.
  * The worker function MUST free the work data when done.
- * Returns 0 on success, -1 on allocation failure. */
-int sdk_at_launch_worker(LPTHREAD_START_ROUTINE worker,
+ * NOTE: workers must not block indefinitely — they are joined on close/cleanup.
+ * Returns 0 on success, -1 on allocation/thread-creation failure. */
+int sdk_at_launch_worker(struct lora_sdk *sdk, LPTHREAD_START_ROUTINE worker,
                           const void *work_data, size_t work_size);
+
+/* Block until every worker launched via sdk_at_launch_worker() has exited.
+ * Uses a draining loop so workers that themselves launch nested workers
+ * (e.g. sdk_at_reboot) are also collected. Safe to call when no workers
+ * are active. */
+void sdk_at_join_workers(struct lora_sdk *sdk);
 
 /* Send AT+Z to reboot gateway. Handles 2s NV-save delay.
  * For serial transport, clears AT mode flag after reboot. */

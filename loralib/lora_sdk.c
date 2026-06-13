@@ -42,6 +42,7 @@ LORA_SDK_API lora_sdk_t *lora_sdk_init(const lora_sdk_callbacks_t *callbacks,
     sdk->tcp_sock = INVALID_SOCKET;
     sdk->serial_handle = INVALID_HANDLE_VALUE;
     sdk->at_transport = LORA_SDK_AT_TRANSPORT_UDP;
+    InitializeCriticalSection(&sdk->worker_cs);
 
     return sdk;
 }
@@ -60,6 +61,11 @@ LORA_SDK_API void lora_sdk_cleanup(lora_sdk_t *sdk)
         WaitForSingleObject(sdk->tcp_connect_thread, 3000);
         CloseHandle(sdk->tcp_connect_thread);
     }
+
+    /* Drain any remaining background workers (e.g. UDP) before freeing sdk,
+     * then release the worker table lock. */
+    sdk_at_join_workers(sdk);
+    DeleteCriticalSection(&sdk->worker_cs);
 
     free(sdk);
 

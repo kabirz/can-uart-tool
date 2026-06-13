@@ -38,6 +38,7 @@
 
 #define SDK_RX_BUF_MAX        4096
 #define SDK_UDP_MAX_IFACES    16
+#define SDK_MAX_WORKERS       16  /* 并发后台 worker 句柄上限 (WaitForMultipleObjects 兼容) */
 
 /* ================================================================
  * SDK 实例结构 — 封装所有状态（实例化，非全局）
@@ -91,6 +92,13 @@ struct lora_sdk {
     int              at_transport;
     int              serial_at_mode;
     CRITICAL_SECTION serial_cs;   /* protect serial handle concurrent access */
+
+    /* 后台 worker 线程管理 (sdk_at_launch_worker 注册句柄,
+     * sdk_serial_close / lora_sdk_cleanup 通过 sdk_at_join_workers 等待退出,
+     * 防止 worker 在资源被释放后仍操作 sdk / 句柄) */
+    CRITICAL_SECTION worker_cs;
+    HANDLE           worker_threads[SDK_MAX_WORKERS];
+    int              worker_count;
 };
 
 /* ================================================================
@@ -134,5 +142,6 @@ void sdk_serial_query_net_params(lora_sdk_t *sdk);
 
 /* lora_sdk_at.c */
 void sdk_at_reboot(lora_sdk_t *sdk);
+void sdk_at_join_workers(lora_sdk_t *sdk);  /* 等待所有后台 worker 退出 (含嵌套 launch) */
 
 #endif /* LORA_SDK_INTERNAL_H */
